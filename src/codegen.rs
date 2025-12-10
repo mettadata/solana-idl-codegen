@@ -146,21 +146,21 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
         }
     });
 
-        // Generate args structs for each instruction
-        for ix in instructions {
-            if !ix.args.is_empty() {
-                let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
-                let field_tokens: Vec<_> = ix
-                    .args
-                    .iter()
-                    .map(|arg| {
-                        let field_name = format_ident!("{}", arg.name.to_snake_case());
-                        let field_type = map_arg_type(&arg.ty);
-                        quote! {
-                            pub #field_name: #field_type
-                        }
-                    })
-                    .collect();
+    // Generate args structs for each instruction
+    for ix in instructions {
+        if !ix.args.is_empty() {
+            let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+            let field_tokens: Vec<_> = ix
+                .args
+                .iter()
+                .map(|arg| {
+                    let field_name = format_ident!("{}", arg.name.to_snake_case());
+                    let field_type = map_arg_type(&arg.ty);
+                    quote! {
+                        pub #field_name: #field_type
+                    }
+                })
+                .collect();
 
             tokens.extend(quote! {
                 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
@@ -256,14 +256,12 @@ fn map_idl_type(ty: &IdlType) -> TokenStream {
             let inner = map_idl_type(option);
             quote! { Option<#inner> }
         }
-        IdlType::Array { array } => {
-            match array {
-                ArrayType::Tuple((inner, size)) => {
-                    let inner_ty = map_idl_type(inner);
-                    quote! { [#inner_ty; #size] }
-                }
+        IdlType::Array { array } => match array {
+            ArrayType::Tuple((inner, size)) => {
+                let inner_ty = map_idl_type(inner);
+                quote! { [#inner_ty; #size] }
             }
-        }
+        },
         IdlType::Defined { defined } => {
             let ident = format_ident!("{}", defined.name);
             quote! { #ident }

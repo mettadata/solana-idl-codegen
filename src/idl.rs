@@ -184,7 +184,9 @@ mod array_tuple {
     {
         let arr: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
         if arr.len() != 2 {
-            return Err(serde::de::Error::custom("Array type must have exactly 2 elements"));
+            return Err(serde::de::Error::custom(
+                "Array type must have exactly 2 elements",
+            ));
         }
         let ty = IdlType::deserialize(&arr[0]).map_err(serde::de::Error::custom)?;
         let size = arr[1]
