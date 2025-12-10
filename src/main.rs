@@ -58,8 +58,61 @@ fn main() -> Result<()> {
 
     // Write lib.rs
     let lib_file = src_dir.join("lib.rs");
-    fs::write(&lib_file, generated_code)
+    fs::write(&lib_file, &generated_code.lib)
         .context(format!("Failed to write lib.rs: {:?}", lib_file))?;
+
+    // Write types.rs (may be empty)
+    if !generated_code.types.is_empty() {
+        let types_file = src_dir.join("types.rs");
+        fs::write(&types_file, &generated_code.types)
+            .context(format!("Failed to write types.rs: {:?}", types_file))?;
+    } else {
+        // Write empty types module
+        let types_file = src_dir.join("types.rs");
+        fs::write(&types_file, "// No custom types defined\n")
+            .context(format!("Failed to write types.rs: {:?}", types_file))?;
+    }
+
+    // Write accounts.rs (may be empty)
+    if !generated_code.accounts.is_empty() {
+        let accounts_file = src_dir.join("accounts.rs");
+        fs::write(&accounts_file, &generated_code.accounts)
+            .context(format!("Failed to write accounts.rs: {:?}", accounts_file))?;
+    } else {
+        // Write empty accounts module
+        let accounts_file = src_dir.join("accounts.rs");
+        fs::write(&accounts_file, "// No accounts defined\n")
+            .context(format!("Failed to write accounts.rs: {:?}", accounts_file))?;
+    }
+
+    // Write instructions.rs
+    let instructions_file = src_dir.join("instructions.rs");
+    fs::write(&instructions_file, &generated_code.instructions)
+        .context(format!("Failed to write instructions.rs: {:?}", instructions_file))?;
+
+    // Write errors.rs (may be empty)
+    if !generated_code.errors.is_empty() {
+        let errors_file = src_dir.join("errors.rs");
+        fs::write(&errors_file, &generated_code.errors)
+            .context(format!("Failed to write errors.rs: {:?}", errors_file))?;
+    } else {
+        // Write empty errors module
+        let errors_file = src_dir.join("errors.rs");
+        fs::write(&errors_file, "// No errors defined\n")
+            .context(format!("Failed to write errors.rs: {:?}", errors_file))?;
+    }
+
+    // Write events.rs (may be empty)
+    if !generated_code.events.is_empty() {
+        let events_file = src_dir.join("events.rs");
+        fs::write(&events_file, &generated_code.events)
+            .context(format!("Failed to write events.rs: {:?}", events_file))?;
+    } else {
+        // Write empty events module
+        let events_file = src_dir.join("events.rs");
+        fs::write(&events_file, "// No events defined\n")
+            .context(format!("Failed to write events.rs: {:?}", events_file))?;
+    }
 
     // Generate Cargo.toml
     let cargo_toml = generate_cargo_toml(&cli.module, &idl);
@@ -84,7 +137,12 @@ fn main() -> Result<()> {
     println!("  ├── README.md");
     println!("  ├── .gitignore");
     println!("  └── src/");
-    println!("      └── lib.rs");
+    println!("      ├── lib.rs");
+    println!("      ├── types.rs");
+    println!("      ├── accounts.rs");
+    println!("      ├── instructions.rs");
+    println!("      ├── errors.rs");
+    println!("      └── events.rs");
 
     Ok(())
 }

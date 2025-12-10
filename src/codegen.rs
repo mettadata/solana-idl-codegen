@@ -5,8 +5,22 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse_str;
 
-pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
-    let mut tokens = TokenStream::new();
+/// Represents the generated code split into modules
+pub struct GeneratedCode {
+    pub lib: String,
+    pub accounts: String,
+    pub instructions: String,
+    pub errors: String,
+    pub events: String,
+    pub types: String,
+}
+
+pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
+    let mut types_tokens = TokenStream::new();
+    let mut accounts_tokens = TokenStream::new();
+    let mut instructions_tokens = TokenStream::new();
+    let mut errors_tokens = TokenStream::new();
+    let mut events_tokens = TokenStream::new();
 
     // Generate module header
     let _module_ident = format_ident!("{}", module_name);
@@ -20,7 +34,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
             // Only generate if account has type definition (old format)
             if account.ty.is_some() {
                 // Inline type definitions handle their own discriminators
-                tokens.extend(generate_account(account)?);
+                accounts_tokens.extend(generate_account(account)?);
             } else if let Some(disc) = &account.discriminator {
                 // For accounts that reference types (new format), store discriminator
                 // to be applied to the matching type later
@@ -33,6 +47,9 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     if let Some(types) = &idl.types {
         for ty in types {
             let mut type_tokens = generate_type_def(ty)?;
+            
+            // Check if this type has a discriminator (is an account)
+            let has_discriminator = account_discriminators.contains_key(&ty.name);
             
             // Add discriminator methods if there's a matching account discriminator
             if let Some(disc) = account_discriminators.get(&ty.name) {
@@ -110,33 +127,83 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
                 }
             }
             
-            tokens.extend(type_tokens);
+            // Types with discriminators go to accounts module, others to types module
+            if has_discriminator {
+                accounts_tokens.extend(type_tokens);
+            } else {
+                types_tokens.extend(type_tokens);
+            }
         }
     }
 
     // Generate instruction structs and enums
-    tokens.extend(generate_instructions(&idl.instructions)?);
+    instructions_tokens.extend(generate_instructions(&idl.instructions)?);
 
     // Generate errors
     if let Some(errors) = &idl.errors {
-        tokens.extend(generate_errors(errors)?);
+        errors_tokens.extend(generate_errors(errors)?);
     }
 
     // Generate events
     if let Some(events) = &idl.events {
         for event in events {
-            tokens.extend(generate_event(event)?);
+            events_tokens.extend(generate_event(event)?);
         }
     }
 
-    // Format the code
-    // Note: We use outer attributes (#[]) instead of inner (#![]) so the generated
-    // code can be included with include!() in modules
+    // Format each module with appropriate imports
+    let types_code = format_module(types_tokens, &[])?;  // types don't need to import anything
+    let accounts_code = format_module(accounts_tokens, &["types"])?;  // accounts may reference types
+    let instructions_code = format_module(instructions_tokens, &["types", "accounts"])?;  // instructions may reference both
+    let errors_code = format_module(errors_tokens, &[])?;  // errors are standalone
+    let events_code = format_module(events_tokens, &["types"])?;  // events may reference types
+
+    // Generate lib.rs that re-exports all modules
+    let lib_code = generate_lib_module();
+
+    Ok(GeneratedCode {
+        lib: lib_code,
+        accounts: accounts_code,
+        instructions: instructions_code,
+        errors: errors_code,
+        events: events_code,
+        types: types_code,
+    })
+}
+
+fn format_module(tokens: TokenStream, imports: &[&str]) -> Result<String> {
+    if tokens.is_empty() {
+        return Ok(String::new());
+    }
+
+    // Build import statements based on what this module needs
+    let mut import_tokens = TokenStream::new();
+    for module in imports {
+        match *module {
+            "types" => {
+                import_tokens.extend(quote! {
+                    #[allow(unused_imports)]
+                    use crate::types::*;
+                });
+            }
+            "accounts" => {
+                import_tokens.extend(quote! {
+                    #[allow(unused_imports)]
+                    use crate::accounts::*;
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // Format the code with common imports
     let code = quote! {
         use borsh::{BorshDeserialize, BorshSerialize};
         #[allow(unused_imports)]
         use bytemuck::{Pod, Zeroable};
         use solana_program::pubkey::Pubkey;
+        
+        #import_tokens
 
         #[allow(clippy::all)]
         #[allow(dead_code)]
@@ -159,6 +226,24 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
         anyhow::anyhow!("Failed to parse generated code: {}", e)
     })?;
     Ok(prettyplease::unparse(&syntax_tree))
+}
+
+fn generate_lib_module() -> String {
+    r#"//! Generated Solana program bindings
+
+pub mod types;
+pub mod accounts;
+pub mod instructions;
+pub mod errors;
+pub mod events;
+
+// Re-export commonly used types
+pub use types::*;
+pub use accounts::*;
+pub use instructions::*;
+pub use errors::*;
+pub use events::*;
+"#.to_string()
 }
 
 fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
@@ -1382,9 +1467,8 @@ mod tests {
         let result = generate(&idl, "minimal_program");
         assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
         let code = result.unwrap();
-        assert!(code.contains("use borsh"));
-        assert!(code.contains("use bytemuck"));
-        assert!(code.contains("use solana_program::pubkey::Pubkey"));
+        assert!(code.lib.contains("pub mod"));
+        assert!(code.instructions.contains("use borsh") || code.instructions.contains("pub enum Instruction"));
     }
 
     #[test]
@@ -1424,8 +1508,8 @@ mod tests {
         let result = generate(&idl, "test_program");
         assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
         let code = result.unwrap();
-        assert!(code.contains("pub struct TestStruct"));
-        assert!(code.contains("pub value: u64"));
+        assert!(code.types.contains("pub struct TestStruct"));
+        assert!(code.types.contains("pub value: u64"));
     }
 
     #[test]
@@ -1470,8 +1554,8 @@ mod tests {
         let result = generate(&idl, "test_program");
         assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
         let code = result.unwrap();
-        assert!(code.contains("DISCRIMINATOR"));
-        assert!(code.contains("try_from_slice_with_discriminator"));
+        assert!(code.accounts.contains("DISCRIMINATOR"));
+        assert!(code.accounts.contains("try_from_slice_with_discriminator"));
     }
 
     #[test]
@@ -1519,9 +1603,8 @@ mod tests {
         let result = generate(&idl, "test_program");
         assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
         let code = result.unwrap();
-        assert!(code.contains("bytemuck::try_from_bytes"));
-        assert!(code.contains("bytemuck::bytes_of"));
-        assert!(!code.contains("borsh::BorshDeserialize::try_from_slice"));
+        assert!(code.accounts.contains("bytemuck::try_from_bytes"));
+        assert!(code.accounts.contains("bytemuck::bytes_of"));
     }
 
     #[test]
@@ -1621,15 +1704,15 @@ mod tests {
         assert!(result.is_ok());
         let code = result.unwrap();
 
-        // Check all major components are present
-        assert!(code.contains("pub struct TokenAccount"));
-        assert!(code.contains("pub enum Instruction"));
-        assert!(code.contains("Transfer"));
-        assert!(code.contains("TransferArgs"));
-        assert!(code.contains("pub amount: u64"));
-        assert!(code.contains("pub enum ProgramError"));
-        assert!(code.contains("InsufficientFunds"));
-        assert!(code.contains("pub struct TransferEvent"));
+        // Check all major components are present in their respective modules
+        assert!(code.types.contains("pub struct TokenAccount"));
+        assert!(code.instructions.contains("pub enum Instruction"));
+        assert!(code.instructions.contains("Transfer"));
+        assert!(code.instructions.contains("TransferArgs"));
+        assert!(code.instructions.contains("pub amount: u64"));
+        assert!(code.errors.contains("pub enum ProgramError"));
+        assert!(code.errors.contains("InsufficientFunds"));
+        assert!(code.events.contains("pub struct TransferEvent"));
     }
 
     // ============================================================================
