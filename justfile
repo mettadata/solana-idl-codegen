@@ -9,4 +9,16 @@ generate:
     cargo run -- -i idl/pumpfun/pump-fun-idl.json -o generated -m pumpfun
 
 format:
-    rustfmt ./generated/*.rs
+    rustfmt ./generated/*/src/*.rs
+
+check:
+    cd generated/raydium_amm && cargo check
+    cd generated/raydium_clmm && cargo check
+    cd generated/raydium_cpmm && cargo check
+    cd generated/pumpfun && cargo check
+
+build:
+    cd generated/raydium_amm && cargo build
+    cd generated/raydium_clmm && cargo build
+    cd generated/raydium_cpmm && cargo build
+    cd generated/pumpfun && cargo build

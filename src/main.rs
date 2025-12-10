@@ -47,18 +47,124 @@ fn main() -> Result<()> {
     // Generate code
     let generated_code = codegen::generate(&idl, &cli.module)?;
 
-    // Create output directory
-    fs::create_dir_all(&cli.output).context(format!(
-        "Failed to create output directory: {:?}",
-        cli.output
+    // Create crate structure
+    let crate_dir = cli.output.join(&cli.module);
+    let src_dir = crate_dir.join("src");
+    
+    fs::create_dir_all(&src_dir).context(format!(
+        "Failed to create crate source directory: {:?}",
+        src_dir
     ))?;
 
-    // Write generated code
-    let output_file = cli.output.join(format!("{}.rs", cli.module));
-    fs::write(&output_file, generated_code)
-        .context(format!("Failed to write output file: {:?}", output_file))?;
+    // Write lib.rs
+    let lib_file = src_dir.join("lib.rs");
+    fs::write(&lib_file, generated_code)
+        .context(format!("Failed to write lib.rs: {:?}", lib_file))?;
 
-    println!("\n✓ Generated code written to: {:?}", output_file);
+    // Generate Cargo.toml
+    let cargo_toml = generate_cargo_toml(&cli.module, &idl);
+    let cargo_toml_file = crate_dir.join("Cargo.toml");
+    fs::write(&cargo_toml_file, cargo_toml)
+        .context(format!("Failed to write Cargo.toml: {:?}", cargo_toml_file))?;
+
+    // Generate README.md
+    let readme = generate_readme(&cli.module, &idl);
+    let readme_file = crate_dir.join("README.md");
+    fs::write(&readme_file, readme)
+        .context(format!("Failed to write README.md: {:?}", readme_file))?;
+
+    // Generate .gitignore
+    let gitignore = "/target\n/Cargo.lock\n";
+    let gitignore_file = crate_dir.join(".gitignore");
+    fs::write(&gitignore_file, gitignore)
+        .context(format!("Failed to write .gitignore: {:?}", gitignore_file))?;
+
+    println!("\n✓ Generated crate at: {:?}", crate_dir);
+    println!("  ├── Cargo.toml");
+    println!("  ├── README.md");
+    println!("  ├── .gitignore");
+    println!("  └── src/");
+    println!("      └── lib.rs");
 
     Ok(())
+}
+
+fn generate_cargo_toml(module_name: &str, idl: &idl::Idl) -> String {
+    format!(
+        r#"[package]
+name = "{}"
+version = "{}"
+edition = "2021"
+description = "Rust bindings for {} Solana program"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+borsh = {{ version = "1.5", features = ["derive"] }}
+bytemuck = {{ version = "1.14", features = ["derive"] }}
+solana-program = "1.18"
+
+[lib]
+crate-type = ["lib"]
+"#,
+        module_name,
+        idl.get_version(),
+        idl.get_name()
+    )
+}
+
+fn generate_readme(module_name: &str, idl: &idl::Idl) -> String {
+    format!(
+        r#"# {}
+
+Rust bindings for the {} Solana program.
+
+## Overview
+
+- **Program**: {}
+- **Version**: {}
+- **Instructions**: {}
+- **Accounts**: {}
+- **Types**: {}
+
+## Usage
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+{} = {{ path = "path/to/{}" }}
+```
+
+Then import in your Rust code:
+
+```rust
+use {}::*;
+```
+
+## Features
+
+- Type-safe instruction builders
+- Borsh serialization/deserialization
+- Account type definitions
+- Custom type definitions
+
+## Generated Code
+
+This crate was automatically generated from the Solana IDL using `solana-idl-codegen`.
+
+## License
+
+MIT OR Apache-2.0
+"#,
+        module_name,
+        idl.get_name(),
+        idl.get_name(),
+        idl.get_version(),
+        idl.instructions.len(),
+        idl.accounts.as_ref().map(|a| a.len()).unwrap_or(0),
+        idl.types.as_ref().map(|t| t.len()).unwrap_or(0),
+        module_name,
+        module_name,
+        module_name
+    )
 }
