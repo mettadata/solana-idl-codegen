@@ -638,3 +638,1091 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
         TokenStream::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    // ============================================================================
+    // Helper Functions Tests
+    // ============================================================================
+
+    #[test]
+    fn test_map_idl_type_primitives() {
+        let test_cases = vec![
+            (IdlType::Simple("bool".to_string()), quote! { bool }),
+            (IdlType::Simple("u8".to_string()), quote! { u8 }),
+            (IdlType::Simple("i8".to_string()), quote! { i8 }),
+            (IdlType::Simple("u16".to_string()), quote! { u16 }),
+            (IdlType::Simple("i16".to_string()), quote! { i16 }),
+            (IdlType::Simple("u32".to_string()), quote! { u32 }),
+            (IdlType::Simple("i32".to_string()), quote! { i32 }),
+            (IdlType::Simple("u64".to_string()), quote! { u64 }),
+            (IdlType::Simple("i64".to_string()), quote! { i64 }),
+            (IdlType::Simple("u128".to_string()), quote! { u128 }),
+            (IdlType::Simple("i128".to_string()), quote! { i128 }),
+            (IdlType::Simple("f32".to_string()), quote! { f32 }),
+            (IdlType::Simple("f64".to_string()), quote! { f64 }),
+            (IdlType::Simple("string".to_string()), quote! { String }),
+            (
+                IdlType::Simple("publicKey".to_string()),
+                quote! { Pubkey },
+            ),
+            (IdlType::Simple("pubkey".to_string()), quote! { Pubkey }),
+            (IdlType::Simple("Pubkey".to_string()), quote! { Pubkey }),
+            (IdlType::Simple("bytes".to_string()), quote! { Vec<u8> }),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = map_idl_type(&input);
+            assert_eq!(
+                result.to_string(),
+                expected.to_string(),
+                "Failed for input: {:?}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_map_idl_type_custom() {
+        let custom_type = IdlType::Simple("MyCustomType".to_string());
+        let result = map_idl_type(&custom_type);
+        assert_eq!(result.to_string(), quote! { MyCustomType }.to_string());
+    }
+
+    #[test]
+    fn test_map_idl_type_vec() {
+        let vec_type = IdlType::Vec {
+            vec: Box::new(IdlType::Simple("u64".to_string())),
+        };
+        let result = map_idl_type(&vec_type);
+        assert_eq!(result.to_string(), quote! { Vec<u64> }.to_string());
+    }
+
+    #[test]
+    fn test_map_idl_type_nested_vec() {
+        let nested_vec = IdlType::Vec {
+            vec: Box::new(IdlType::Vec {
+                vec: Box::new(IdlType::Simple("u8".to_string())),
+            }),
+        };
+        let result = map_idl_type(&nested_vec);
+        let result_str = result.to_string();
+        // Token streams may have different whitespace
+        assert!(
+            result_str.contains("Vec") && result_str.contains("u8"),
+            "Result should contain nested Vec type: {}",
+            result_str
+        );
+    }
+
+    #[test]
+    fn test_map_idl_type_option() {
+        let option_type = IdlType::Option {
+            option: Box::new(IdlType::Simple("u64".to_string())),
+        };
+        let result = map_idl_type(&option_type);
+        assert_eq!(result.to_string(), quote! { Option<u64> }.to_string());
+    }
+
+    #[test]
+    fn test_map_idl_type_option_custom() {
+        let option_type = IdlType::Option {
+            option: Box::new(IdlType::Simple("MyType".to_string())),
+        };
+        let result = map_idl_type(&option_type);
+        assert_eq!(result.to_string(), quote! { Option<MyType> }.to_string());
+    }
+
+    #[test]
+    fn test_map_idl_type_array() {
+        let array_type = IdlType::Array {
+            array: ArrayType::Tuple((Box::new(IdlType::Simple("u8".to_string())), 32)),
+        };
+        let result = map_idl_type(&array_type);
+        let result_str = result.to_string();
+        // The array size might have usize suffix
+        assert!(
+            result_str.contains("[u8") && result_str.contains("32"),
+            "Result should contain array type: {}",
+            result_str
+        );
+    }
+
+    #[test]
+    fn test_map_idl_type_defined_string() {
+        let defined_type = IdlType::Defined {
+            defined: DefinedTypeOrString::String("MyStruct".to_string()),
+        };
+        let result = map_idl_type(&defined_type);
+        assert_eq!(result.to_string(), quote! { MyStruct }.to_string());
+    }
+
+    #[test]
+    fn test_map_idl_type_defined_nested() {
+        let defined_type = IdlType::Defined {
+            defined: DefinedTypeOrString::Nested(DefinedType {
+                name: "MyStruct".to_string(),
+            }),
+        };
+        let result = map_idl_type(&defined_type);
+        assert_eq!(result.to_string(), quote! { MyStruct }.to_string());
+    }
+
+    #[test]
+    fn test_generate_docs_empty() {
+        let result = generate_docs(None);
+        assert_eq!(result.to_string(), "");
+    }
+
+    #[test]
+    fn test_generate_docs_single_line() {
+        let docs = vec!["This is a single line doc".to_string()];
+        let result = generate_docs(Some(&docs));
+        assert!(result.to_string().contains("This is a single line doc"));
+    }
+
+    #[test]
+    fn test_generate_docs_multiple_lines() {
+        let docs = vec![
+            "First line".to_string(),
+            "Second line".to_string(),
+            "Third line".to_string(),
+        ];
+        let result = generate_docs(Some(&docs));
+        let result_str = result.to_string();
+        assert!(result_str.contains("First line"));
+        assert!(result_str.contains("Second line"));
+        assert!(result_str.contains("Third line"));
+    }
+
+    #[test]
+    fn test_generate_docs_with_empty_lines() {
+        let docs = vec![
+            "First line".to_string(),
+            "".to_string(),
+            "Third line".to_string(),
+        ];
+        let result = generate_docs(Some(&docs));
+        // Empty lines should be filtered out
+        let result_str = result.to_string();
+        assert!(result_str.contains("First line"));
+        assert!(result_str.contains("Third line"));
+    }
+
+    // ============================================================================
+    // Type Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_type_def_simple_struct() {
+        let type_def = TypeDef {
+            name: "MyStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: vec![
+                    Field {
+                        name: "field1".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "field2".to_string(),
+                        ty: IdlType::Simple("string".to_string()),
+                        docs: None,
+                    },
+                ],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct MyStruct"));
+        assert!(result_str.contains("pub field1 : u64"));
+        assert!(result_str.contains("pub field2 : String"));
+        assert!(result_str.contains("BorshSerialize"));
+        assert!(result_str.contains("BorshDeserialize"));
+    }
+
+    #[test]
+    fn test_generate_type_def_struct_with_docs() {
+        let type_def = TypeDef {
+            name: "MyStruct".to_string(),
+            docs: Some(vec!["This is a documented struct".to_string()]),
+            ty: TypeDefType::Struct {
+                fields: vec![Field {
+                    name: "field1".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    docs: Some(vec!["Field documentation".to_string()]),
+                }],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("This is a documented struct"));
+        assert!(result_str.contains("Field documentation"));
+    }
+
+    #[test]
+    fn test_generate_type_def_bytemuck_struct() {
+        let type_def = TypeDef {
+            name: "MyBytemuckStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: vec![
+                    Field {
+                        name: "field1".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "field2".to_string(),
+                        ty: IdlType::Simple("u32".to_string()),
+                        docs: None,
+                    },
+                ],
+            },
+            serialization: Some("bytemuck".to_string()),
+            repr: Some(Repr {
+                kind: "C".to_string(),
+                packed: None,
+            }),
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct MyBytemuckStruct"));
+        assert!(result_str.contains("repr") && result_str.contains("C"));
+        assert!(result_str.contains("unsafe impl bytemuck :: Pod"));
+        assert!(result_str.contains("unsafe impl bytemuck :: Zeroable"));
+        assert!(!result_str.contains("BorshSerialize"));
+    }
+
+    #[test]
+    fn test_generate_type_def_bytemuck_packed_struct() {
+        let type_def = TypeDef {
+            name: "PackedStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: vec![Field {
+                    name: "field1".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    docs: None,
+                }],
+            },
+            serialization: Some("bytemuckunsafe".to_string()),
+            repr: Some(Repr {
+                kind: "C".to_string(),
+                packed: Some(true),
+            }),
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("repr") && result_str.contains("C") && result_str.contains("packed"));
+    }
+
+    #[test]
+    fn test_generate_type_def_simple_enum() {
+        let type_def = TypeDef {
+            name: "MyEnum".to_string(),
+            docs: None,
+            ty: TypeDefType::Enum {
+                variants: vec![
+                    EnumVariant {
+                        name: "Variant1".to_string(),
+                        fields: None,
+                    },
+                    EnumVariant {
+                        name: "Variant2".to_string(),
+                        fields: None,
+                    },
+                ],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub enum MyEnum"));
+        assert!(result_str.contains("Variant1"));
+        assert!(result_str.contains("Variant2"));
+        assert!(result_str.contains("BorshSerialize"));
+    }
+
+    #[test]
+    fn test_generate_type_def_enum_with_named_fields() {
+        let type_def = TypeDef {
+            name: "MyEnum".to_string(),
+            docs: None,
+            ty: TypeDefType::Enum {
+                variants: vec![EnumVariant {
+                    name: "VariantWithFields".to_string(),
+                    fields: Some(EnumFields::Named(vec![
+                        Field {
+                            name: "field1".to_string(),
+                            ty: IdlType::Simple("u64".to_string()),
+                            docs: None,
+                        },
+                        Field {
+                            name: "field2".to_string(),
+                            ty: IdlType::Simple("string".to_string()),
+                            docs: None,
+                        },
+                    ])),
+                }],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("VariantWithFields"));
+        assert!(result_str.contains("field1 : u64"));
+        assert!(result_str.contains("field2 : String"));
+    }
+
+    #[test]
+    fn test_generate_type_def_enum_with_tuple_fields() {
+        let type_def = TypeDef {
+            name: "MyEnum".to_string(),
+            docs: None,
+            ty: TypeDefType::Enum {
+                variants: vec![EnumVariant {
+                    name: "TupleVariant".to_string(),
+                    fields: Some(EnumFields::Tuple(vec![
+                        IdlType::Simple("u64".to_string()),
+                        IdlType::Simple("string".to_string()),
+                    ])),
+                }],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("TupleVariant"));
+        assert!(result_str.contains("u64"));
+        assert!(result_str.contains("String"));
+    }
+
+    #[test]
+    fn test_generate_type_def_snake_case_fields() {
+        let type_def = TypeDef {
+            name: "MyStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: vec![Field {
+                    name: "CamelCaseField".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    docs: None,
+                }],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("camel_case_field"));
+    }
+
+    // ============================================================================
+    // Error Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_errors_simple() {
+        let errors = vec![
+            Error {
+                code: 6000,
+                name: "InvalidAmount".to_string(),
+                msg: Some("The amount is invalid".to_string()),
+            },
+            Error {
+                code: 6001,
+                name: "Unauthorized".to_string(),
+                msg: Some("User is not authorized".to_string()),
+            },
+        ];
+
+        let result = generate_errors(&errors).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub enum ProgramError"));
+        assert!(result_str.contains("InvalidAmount"));
+        assert!(result_str.contains("Unauthorized"));
+        assert!(result_str.contains("The amount is invalid"));
+        assert!(result_str.contains("User is not authorized"));
+    }
+
+    #[test]
+    fn test_generate_errors_no_message() {
+        let errors = vec![Error {
+            code: 6000,
+            name: "ErrorWithoutMessage".to_string(),
+            msg: None,
+        }];
+
+        let result = generate_errors(&errors).unwrap();
+        let result_str = result.to_string();
+
+        // Should use name as message when msg is None
+        assert!(result_str.contains("ErrorWithoutMessage"));
+    }
+
+    #[test]
+    fn test_generate_errors_empty() {
+        let errors = vec![];
+        let result = generate_errors(&errors).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub enum ProgramError"));
+    }
+
+    // ============================================================================
+    // Event Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_event_with_fields() {
+        let event = Event {
+            name: "TransferEvent".to_string(),
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            fields: Some(vec![
+                EventField {
+                    name: "from".to_string(),
+                    ty: IdlType::Simple("publicKey".to_string()),
+                    index: false,
+                },
+                EventField {
+                    name: "to".to_string(),
+                    ty: IdlType::Simple("publicKey".to_string()),
+                    index: false,
+                },
+                EventField {
+                    name: "amount".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    index: false,
+                },
+            ]),
+        };
+
+        let result = generate_event(&event).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct TransferEvent"));
+        assert!(result_str.contains("pub from : Pubkey"));
+        assert!(result_str.contains("pub to : Pubkey"));
+        assert!(result_str.contains("pub amount : u64"));
+        assert!(result_str.contains("DISCRIMINATOR"));
+        assert!(result_str.contains("try_from_slice_with_discriminator"));
+    }
+
+    #[test]
+    fn test_generate_event_without_discriminator() {
+        let event = Event {
+            name: "SimpleEvent".to_string(),
+            discriminator: None,
+            fields: Some(vec![EventField {
+                name: "value".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+                index: false,
+            }]),
+        };
+
+        let result = generate_event(&event).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct SimpleEvent"));
+        assert!(!result_str.contains("DISCRIMINATOR"));
+    }
+
+    #[test]
+    fn test_generate_event_without_fields() {
+        let event = Event {
+            name: "EmptyEvent".to_string(),
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            fields: None,
+        };
+
+        let result = generate_event(&event).unwrap();
+        let result_str = result.to_string();
+
+        // Events without fields should not generate anything
+        assert_eq!(result_str, "");
+    }
+
+    // ============================================================================
+    // Instruction Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_instructions_simple() {
+        let instructions = vec![
+            Instruction {
+                name: "initialize".to_string(),
+                docs: None,
+                discriminator: Some(vec![175, 175, 109, 31, 13, 152, 155, 237]),
+                accounts: vec![],
+                args: vec![],
+            },
+            Instruction {
+                name: "transfer".to_string(),
+                docs: None,
+                discriminator: Some(vec![163, 52, 200, 231, 140, 3, 69, 186]),
+                accounts: vec![],
+                args: vec![Arg {
+                    name: "amount".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                }],
+            },
+        ];
+
+        let result = generate_instructions(&instructions).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub enum Instruction"));
+        assert!(result_str.contains("Initialize"));
+        assert!(result_str.contains("Transfer"));
+        assert!(result_str.contains("TransferArgs"));
+        assert!(result_str.contains("pub amount : u64"));
+        assert!(result_str.contains("serialize"));
+        assert!(result_str.contains("try_from_slice"));
+    }
+
+    #[test]
+    fn test_generate_instructions_with_accounts() {
+        let instructions = vec![Instruction {
+            name: "swap".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "user".to_string(),
+                    docs: Some(vec!["The user account".to_string()]),
+                    signer: true,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "pool".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("SwapAccounts"));
+        assert!(result_str.contains("pub user : Pubkey"));
+        assert!(result_str.contains("pub pool : Pubkey"));
+        assert!(result_str.contains("The user account"));
+    }
+
+    #[test]
+    fn test_generate_instructions_multiple_args() {
+        let instructions = vec![Instruction {
+            name: "complex_instruction".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![],
+            args: vec![
+                Arg {
+                    name: "amount".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                },
+                Arg {
+                    name: "recipient".to_string(),
+                    ty: IdlType::Simple("publicKey".to_string()),
+                },
+                Arg {
+                    name: "memo".to_string(),
+                    ty: IdlType::Option {
+                        option: Box::new(IdlType::Simple("string".to_string())),
+                    },
+                },
+            ],
+        }];
+
+        let result = generate_instructions(&instructions).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("ComplexInstructionArgs"));
+        assert!(result_str.contains("pub amount : u64"));
+        assert!(result_str.contains("pub recipient : Pubkey"));
+        assert!(result_str.contains("pub memo : Option < String >"));
+    }
+
+    #[test]
+    fn test_generate_instructions_without_discriminator() {
+        let instructions = vec![
+            Instruction {
+                name: "first".to_string(),
+                docs: None,
+                discriminator: None,
+                accounts: vec![],
+                args: vec![],
+            },
+            Instruction {
+                name: "second".to_string(),
+                docs: None,
+                discriminator: None,
+                accounts: vec![],
+                args: vec![],
+            },
+        ];
+
+        let result = generate_instructions(&instructions).unwrap();
+        let result_str = result.to_string();
+
+        // Should generate with index-based discriminators
+        assert!(result_str.contains("First"));
+        assert!(result_str.contains("Second"));
+    }
+
+    // ============================================================================
+    // Account Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_account_with_type() {
+        let account = Account {
+            name: "UserAccount".to_string(),
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            docs: Some(vec!["User account structure".to_string()]),
+            ty: Some(TypeDefType::Struct {
+                fields: vec![Field {
+                    name: "balance".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    docs: None,
+                }],
+            }),
+        };
+
+        let result = generate_account(&account).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct UserAccount"));
+        assert!(result_str.contains("pub balance : u64"));
+        assert!(result_str.contains("DISCRIMINATOR"));
+        assert!(result_str.contains("try_from_slice_with_discriminator"));
+        assert!(result_str.contains("serialize_with_discriminator"));
+    }
+
+    #[test]
+    fn test_generate_account_without_type() {
+        let account = Account {
+            name: "ReferenceAccount".to_string(),
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            docs: None,
+            ty: None,
+        };
+
+        let result = generate_account(&account).unwrap();
+        let result_str = result.to_string();
+
+        // Should return empty TokenStream for reference accounts
+        assert_eq!(result_str, "");
+    }
+
+    // ============================================================================
+    // Integration Tests - Full Code Generation
+    // ============================================================================
+
+    #[test]
+    fn test_generate_minimal_idl() {
+        let idl = Idl {
+            address: Some("11111111111111111111111111111111".to_string()),
+            version: Some("0.1.0".to_string()),
+            name: Some("minimal_program".to_string()),
+            metadata: None,
+            // Include at least one instruction to avoid empty match arms
+            instructions: vec![Instruction {
+                name: "noop".to_string(),
+                docs: None,
+                discriminator: Some(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate(&idl, "minimal_program");
+        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        let code = result.unwrap();
+        assert!(code.contains("use borsh"));
+        assert!(code.contains("use bytemuck"));
+        assert!(code.contains("use solana_program::pubkey::Pubkey"));
+    }
+
+    #[test]
+    fn test_generate_idl_with_types() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: Some("test_program".to_string()),
+            metadata: None,
+            // Include at least one instruction to avoid empty match arms
+            instructions: vec![Instruction {
+                name: "noop".to_string(),
+                docs: None,
+                discriminator: Some(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: None,
+            types: Some(vec![TypeDef {
+                name: "TestStruct".to_string(),
+                docs: None,
+                ty: TypeDefType::Struct {
+                    fields: vec![Field {
+                        name: "value".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    }],
+                },
+                serialization: None,
+                repr: None,
+            }]),
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate(&idl, "test_program");
+        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        let code = result.unwrap();
+        assert!(code.contains("pub struct TestStruct"));
+        assert!(code.contains("pub value: u64"));
+    }
+
+    #[test]
+    fn test_generate_idl_with_discriminators() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: Some("test_program".to_string()),
+            metadata: None,
+            // Include at least one instruction to avoid empty match arms
+            instructions: vec![Instruction {
+                name: "noop".to_string(),
+                docs: None,
+                discriminator: Some(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: Some(vec![Account {
+                name: "TestAccount".to_string(),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                docs: None,
+                ty: None,
+            }]),
+            types: Some(vec![TypeDef {
+                name: "TestAccount".to_string(),
+                docs: None,
+                ty: TypeDefType::Struct {
+                    fields: vec![Field {
+                        name: "data".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    }],
+                },
+                serialization: None,
+                repr: None,
+            }]),
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate(&idl, "test_program");
+        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        let code = result.unwrap();
+        assert!(code.contains("DISCRIMINATOR"));
+        assert!(code.contains("try_from_slice_with_discriminator"));
+    }
+
+    #[test]
+    fn test_generate_idl_with_bytemuck_serialization() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: Some("test_program".to_string()),
+            metadata: None,
+            // Include at least one instruction to avoid empty match arms
+            instructions: vec![Instruction {
+                name: "noop".to_string(),
+                docs: None,
+                discriminator: Some(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: Some(vec![Account {
+                name: "BytemuckAccount".to_string(),
+                discriminator: Some(vec![10, 20, 30, 40, 50, 60, 70, 80]),
+                docs: None,
+                ty: None,
+            }]),
+            types: Some(vec![TypeDef {
+                name: "BytemuckAccount".to_string(),
+                docs: None,
+                ty: TypeDefType::Struct {
+                    fields: vec![Field {
+                        name: "value".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    }],
+                },
+                serialization: Some("bytemuck".to_string()),
+                repr: Some(Repr {
+                    kind: "C".to_string(),
+                    packed: None,
+                }),
+            }]),
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate(&idl, "test_program");
+        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        let code = result.unwrap();
+        assert!(code.contains("bytemuck::try_from_bytes"));
+        assert!(code.contains("bytemuck::bytes_of"));
+        assert!(!code.contains("borsh::BorshDeserialize::try_from_slice"));
+    }
+
+    #[test]
+    fn test_generate_complex_idl() {
+        let idl = Idl {
+            address: Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()),
+            version: Some("1.0.0".to_string()),
+            name: Some("token_program".to_string()),
+            metadata: None,
+            instructions: vec![Instruction {
+                name: "transfer".to_string(),
+                docs: Some(vec![
+                    "Transfers tokens from one account to another".to_string(),
+                ]),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                accounts: vec![
+                    AccountArg {
+                        name: "source".to_string(),
+                        docs: None,
+                        signer: true,
+                        writable: true,
+                        pda: None,
+                        address: None,
+                        optional: None,
+                    },
+                    AccountArg {
+                        name: "destination".to_string(),
+                        docs: None,
+                        signer: false,
+                        writable: true,
+                        pda: None,
+                        address: None,
+                        optional: None,
+                    },
+                ],
+                args: vec![Arg {
+                    name: "amount".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                }],
+            }],
+            accounts: None,
+            types: Some(vec![TypeDef {
+                name: "TokenAccount".to_string(),
+                docs: Some(vec!["Token account data".to_string()]),
+                ty: TypeDefType::Struct {
+                    fields: vec![
+                        Field {
+                            name: "mint".to_string(),
+                            ty: IdlType::Simple("publicKey".to_string()),
+                            docs: None,
+                        },
+                        Field {
+                            name: "owner".to_string(),
+                            ty: IdlType::Simple("publicKey".to_string()),
+                            docs: None,
+                        },
+                        Field {
+                            name: "amount".to_string(),
+                            ty: IdlType::Simple("u64".to_string()),
+                            docs: None,
+                        },
+                    ],
+                },
+                serialization: None,
+                repr: None,
+            }]),
+            errors: Some(vec![Error {
+                code: 6000,
+                name: "InsufficientFunds".to_string(),
+                msg: Some("Insufficient funds for transfer".to_string()),
+            }]),
+            events: Some(vec![Event {
+                name: "TransferEvent".to_string(),
+                discriminator: Some(vec![255, 254, 253, 252, 251, 250, 249, 248]),
+                fields: Some(vec![
+                    EventField {
+                        name: "from".to_string(),
+                        ty: IdlType::Simple("publicKey".to_string()),
+                        index: false,
+                    },
+                    EventField {
+                        name: "to".to_string(),
+                        ty: IdlType::Simple("publicKey".to_string()),
+                        index: false,
+                    },
+                    EventField {
+                        name: "amount".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        index: false,
+                    },
+                ]),
+            }]),
+            constants: None,
+        };
+
+        let result = generate(&idl, "token_program");
+        assert!(result.is_ok());
+        let code = result.unwrap();
+
+        // Check all major components are present
+        assert!(code.contains("pub struct TokenAccount"));
+        assert!(code.contains("pub enum Instruction"));
+        assert!(code.contains("Transfer"));
+        assert!(code.contains("TransferArgs"));
+        assert!(code.contains("pub amount: u64"));
+        assert!(code.contains("pub enum ProgramError"));
+        assert!(code.contains("InsufficientFunds"));
+        assert!(code.contains("pub struct TransferEvent"));
+    }
+
+    // ============================================================================
+    // Edge Cases and Error Handling
+    // ============================================================================
+
+    #[test]
+    fn test_empty_struct() {
+        let type_def = TypeDef {
+            name: "EmptyStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct { fields: vec![] },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_deeply_nested_types() {
+        let deeply_nested = IdlType::Vec {
+            vec: Box::new(IdlType::Option {
+                option: Box::new(IdlType::Vec {
+                    vec: Box::new(IdlType::Simple("u64".to_string())),
+                }),
+            }),
+        };
+
+        let result = map_idl_type(&deeply_nested);
+        let result_str = result.to_string();
+        // Token streams may have different whitespace, just check the structure
+        assert!(
+            result_str.contains("Vec") && result_str.contains("Option") && result_str.contains("u64"),
+            "Result should contain deeply nested type: {}",
+            result_str
+        );
+    }
+
+    #[test]
+    fn test_snake_case_conversion() {
+        let type_def = TypeDef {
+            name: "TestStruct".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: vec![
+                    Field {
+                        name: "camelCase".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "PascalCase".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "snake_case".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    },
+                ],
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("camel_case"));
+        assert!(result_str.contains("pascal_case"));
+        assert!(result_str.contains("snake_case"));
+    }
+
+    #[test]
+    fn test_instruction_deserialization_with_args() {
+        let instructions = vec![Instruction {
+            name: "test_instruction".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![],
+            args: vec![Arg {
+                name: "value".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+            }],
+        }];
+
+        let result = generate_instructions(&instructions).unwrap();
+        let result_str = result.to_string();
+
+        // Check that deserialization uses &mut buf
+        assert!(result_str.contains("deserialize (& mut buf)"));
+    }
+}

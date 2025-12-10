@@ -295,3 +295,409 @@ pub struct Constant {
     pub ty: IdlType,
     pub value: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_idl_get_name_from_metadata() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: None,
+            metadata: Some(Metadata {
+                name: Some("program_from_metadata".to_string()),
+                version: None,
+                spec: None,
+                description: None,
+                address: None,
+            }),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_name(), "program_from_metadata");
+    }
+
+    #[test]
+    fn test_idl_get_name_from_name_field() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: Some("program_from_name".to_string()),
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_name(), "program_from_name");
+    }
+
+    #[test]
+    fn test_idl_get_name_default() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_name(), "unknown");
+    }
+
+    #[test]
+    fn test_idl_get_version_from_metadata() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: None,
+            metadata: Some(Metadata {
+                name: None,
+                version: Some("2.0.0".to_string()),
+                spec: None,
+                description: None,
+                address: None,
+            }),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_version(), "2.0.0");
+    }
+
+    #[test]
+    fn test_idl_get_version_from_version_field() {
+        let idl = Idl {
+            address: None,
+            version: Some("1.0.0".to_string()),
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_version(), "1.0.0");
+    }
+
+    #[test]
+    fn test_idl_get_version_default() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        assert_eq!(idl.get_version(), "0.0.0");
+    }
+
+    #[test]
+    fn test_defined_type_or_string_name_string() {
+        let defined = DefinedTypeOrString::String("MyType".to_string());
+        assert_eq!(defined.name(), "MyType");
+    }
+
+    #[test]
+    fn test_defined_type_or_string_name_nested() {
+        let defined = DefinedTypeOrString::Nested(DefinedType {
+            name: "NestedType".to_string(),
+        });
+        assert_eq!(defined.name(), "NestedType");
+    }
+
+    #[test]
+    fn test_deserialize_simple_idl_type() {
+        let json = r#""u64""#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Simple(s) => assert_eq!(s, "u64"),
+            _ => panic!("Expected Simple variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_vec_idl_type() {
+        let json = r#"{"vec":"u64"}"#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Vec { vec } => match *vec {
+                IdlType::Simple(s) => assert_eq!(s, "u64"),
+                _ => panic!("Expected Simple variant inside Vec"),
+            },
+            _ => panic!("Expected Vec variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_option_idl_type() {
+        let json = r#"{"option":"string"}"#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Option { option } => match *option {
+                IdlType::Simple(s) => assert_eq!(s, "string"),
+                _ => panic!("Expected Simple variant inside Option"),
+            },
+            _ => panic!("Expected Option variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_array_idl_type() {
+        let json = r#"{"array":["u8",32]}"#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Array { array } => match array {
+                ArrayType::Tuple((inner, size)) => {
+                    match *inner {
+                        IdlType::Simple(s) => assert_eq!(s, "u8"),
+                        _ => panic!("Expected Simple variant inside Array"),
+                    }
+                    assert_eq!(size, 32);
+                }
+            },
+            _ => panic!("Expected Array variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_defined_string_idl_type() {
+        let json = r#"{"defined":"MyStruct"}"#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Defined { defined } => {
+                assert_eq!(defined.name(), "MyStruct");
+            }
+            _ => panic!("Expected Defined variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_defined_nested_idl_type() {
+        let json = r#"{"defined":{"name":"MyStruct"}}"#;
+        let result: IdlType = serde_json::from_str(json).unwrap();
+        match result {
+            IdlType::Defined { defined } => {
+                assert_eq!(defined.name(), "MyStruct");
+            }
+            _ => panic!("Expected Defined variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_enum_named_fields() {
+        let json = r#"[{"name":"field1","type":"u64"},{"name":"field2","type":"string"}]"#;
+        let result: EnumFields = serde_json::from_str(json).unwrap();
+        match result {
+            EnumFields::Named(fields) => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "field1");
+                assert_eq!(fields[1].name, "field2");
+            }
+            _ => panic!("Expected Named variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_enum_tuple_fields() {
+        let json = r#"["u64","string"]"#;
+        let result: EnumFields = serde_json::from_str(json).unwrap();
+        match result {
+            EnumFields::Tuple(types) => {
+                assert_eq!(types.len(), 2);
+            }
+            _ => panic!("Expected Tuple variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_struct_type() {
+        let json = r#"{"kind":"struct","fields":[{"name":"value","type":"u64"}]}"#;
+        let result: TypeDefType = serde_json::from_str(json).unwrap();
+        match result {
+            TypeDefType::Struct { fields } => {
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "value");
+            }
+            _ => panic!("Expected Struct variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_enum_type() {
+        let json = r#"{"kind":"enum","variants":[{"name":"Variant1"},{"name":"Variant2"}]}"#;
+        let result: TypeDefType = serde_json::from_str(json).unwrap();
+        match result {
+            TypeDefType::Enum { variants } => {
+                assert_eq!(variants.len(), 2);
+                assert_eq!(variants[0].name, "Variant1");
+                assert_eq!(variants[1].name, "Variant2");
+            }
+            _ => panic!("Expected Enum variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_account_arg_with_aliases() {
+        // Test old format with isSigner and isMut
+        let json = r#"{"name":"user","isSigner":true,"isMut":false}"#;
+        let result: AccountArg = serde_json::from_str(json).unwrap();
+        assert_eq!(result.name, "user");
+        assert_eq!(result.signer, true);
+        assert_eq!(result.writable, false);
+    }
+
+    #[test]
+    fn test_deserialize_account_arg_with_new_format() {
+        // Test new format with signer and writable
+        let json = r#"{"name":"user","signer":true,"writable":true}"#;
+        let result: AccountArg = serde_json::from_str(json).unwrap();
+        assert_eq!(result.name, "user");
+        assert_eq!(result.signer, true);
+        assert_eq!(result.writable, true);
+    }
+
+    #[test]
+    fn test_deserialize_seed_const() {
+        let json = r#"{"kind":"const","value":[1,2,3]}"#;
+        let result: Seed = serde_json::from_str(json).unwrap();
+        match result {
+            Seed::Const { value } => {
+                assert_eq!(value, vec![1, 2, 3]);
+            }
+            _ => panic!("Expected Const variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_seed_arg() {
+        let json = r#"{"kind":"arg","path":"amount"}"#;
+        let result: Seed = serde_json::from_str(json).unwrap();
+        match result {
+            Seed::Arg { path } => {
+                assert_eq!(path, "amount");
+            }
+            _ => panic!("Expected Arg variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_seed_account() {
+        let json = r#"{"kind":"account","path":"user.key"}"#;
+        let result: Seed = serde_json::from_str(json).unwrap();
+        match result {
+            Seed::Account { path } => {
+                assert_eq!(path, "user.key");
+            }
+            _ => panic!("Expected Account variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_full_instruction() {
+        let json = r#"{
+            "name": "transfer",
+            "docs": ["Transfer tokens"],
+            "discriminator": [1,2,3,4,5,6,7,8],
+            "accounts": [
+                {"name": "from", "signer": true, "writable": true},
+                {"name": "to", "signer": false, "writable": true}
+            ],
+            "args": [
+                {"name": "amount", "type": "u64"}
+            ]
+        }"#;
+        let result: Instruction = serde_json::from_str(json).unwrap();
+        assert_eq!(result.name, "transfer");
+        assert_eq!(result.accounts.len(), 2);
+        assert_eq!(result.args.len(), 1);
+        assert_eq!(result.discriminator, Some(vec![1, 2, 3, 4, 5, 6, 7, 8]));
+    }
+
+    #[test]
+    fn test_deserialize_minimal_idl() {
+        let json = r#"{
+            "version": "0.1.0",
+            "name": "test_program",
+            "instructions": []
+        }"#;
+        let result: Idl = serde_json::from_str(json).unwrap();
+        assert_eq!(result.get_name(), "test_program");
+        assert_eq!(result.get_version(), "0.1.0");
+        assert_eq!(result.instructions.len(), 0);
+    }
+
+    #[test]
+    fn test_deserialize_idl_with_metadata() {
+        let json = r#"{
+            "metadata": {
+                "name": "test_program",
+                "version": "1.0.0",
+                "spec": "0.1.0"
+            },
+            "instructions": []
+        }"#;
+        let result: Idl = serde_json::from_str(json).unwrap();
+        assert_eq!(result.get_name(), "test_program");
+        assert_eq!(result.get_version(), "1.0.0");
+    }
+
+    #[test]
+    fn test_serialize_and_deserialize_roundtrip() {
+        let original = Idl {
+            address: Some("11111111111111111111111111111111".to_string()),
+            version: Some("1.0.0".to_string()),
+            name: Some("test".to_string()),
+            metadata: None,
+            instructions: vec![Instruction {
+                name: "test_ix".to_string(),
+                docs: None,
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Idl = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.address, deserialized.address);
+        assert_eq!(original.version, deserialized.version);
+        assert_eq!(original.name, deserialized.name);
+        assert_eq!(original.instructions.len(), deserialized.instructions.len());
+    }
+}
