@@ -1,3 +1,6 @@
+clean:
+    rm -rf generated
+    cargo clean
 
 generate:
     cargo run -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
