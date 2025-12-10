@@ -17,12 +17,14 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     let mut account_discriminators = std::collections::HashMap::new();
     if let Some(accounts) = &idl.accounts {
         for account in accounts {
-            if let Some(disc) = &account.discriminator {
-                account_discriminators.insert(account.name.clone(), disc.clone());
-            }
             // Only generate if account has type definition (old format)
             if account.ty.is_some() {
+                // Inline type definitions handle their own discriminators
                 tokens.extend(generate_account(account)?);
+            } else if let Some(disc) = &account.discriminator {
+                // For accounts that reference types (new format), store discriminator
+                // to be applied to the matching type later
+                account_discriminators.insert(account.name.clone(), disc.clone());
             }
         }
     }
@@ -592,4 +594,3 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
         TokenStream::new()
     }
 }
-
