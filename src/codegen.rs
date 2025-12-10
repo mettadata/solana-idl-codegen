@@ -39,32 +39,75 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
                 let name = format_ident!("{}", ty.name);
                 let disc_bytes = disc.iter().map(|b| quote! { #b });
                 
-                type_tokens.extend(quote! {
-                    impl #name {
-                        pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
-                        
-                        pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
-                            if data.len() < 8 {
-                                return Err(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    "Data too short for discriminator",
-                                ));
+                // Check if this type uses bytemuck serialization
+                let use_bytemuck = ty
+                    .serialization
+                    .as_ref()
+                    .map(|s| s == "bytemuckunsafe" || s == "bytemuck")
+                    .unwrap_or(false);
+                
+                if use_bytemuck {
+                    // For bytemuck types, use bytemuck for deserialization
+                    type_tokens.extend(quote! {
+                        impl #name {
+                            pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
+                            
+                            pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
+                                if data.len() < 8 {
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "Data too short for discriminator",
+                                    ));
+                                }
+                                if data[..8] != Self::DISCRIMINATOR {
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "Invalid discriminator",
+                                    ));
+                                }
+                                bytemuck::try_from_bytes::<Self>(&data[8..])
+                                    .map(|v| *v)
+                                    .map_err(|e| std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!("Bytemuck conversion error: {:?}", e),
+                                    ))
                             }
-                            if data[..8] != Self::DISCRIMINATOR {
-                                return Err(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    "Invalid discriminator",
-                                ));
+                            
+                            pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                                writer.write_all(&Self::DISCRIMINATOR)?;
+                                writer.write_all(bytemuck::bytes_of(self))
                             }
-                            borsh::BorshDeserialize::try_from_slice(&data[8..])
                         }
-                        
-                        pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-                            writer.write_all(&Self::DISCRIMINATOR)?;
-                            borsh::BorshSerialize::serialize(self, writer)
+                    });
+                } else {
+                    // For borsh types, use borsh for deserialization
+                    type_tokens.extend(quote! {
+                        impl #name {
+                            pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
+                            
+                            pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
+                                if data.len() < 8 {
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "Data too short for discriminator",
+                                    ));
+                                }
+                                if data[..8] != Self::DISCRIMINATOR {
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "Invalid discriminator",
+                                    ));
+                                }
+                                borsh::BorshDeserialize::try_from_slice(&data[8..])
+                            }
+                            
+                            pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                                writer.write_all(&Self::DISCRIMINATOR)?;
+                                borsh::BorshSerialize::serialize(self, writer)
+                            }
                         }
-                    }
-                });
+                    });
+                }
             }
             
             tokens.extend(type_tokens);
@@ -91,6 +134,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     // code can be included with include!() in modules
     let code = quote! {
         use borsh::{BorshDeserialize, BorshSerialize};
+        #[allow(unused_imports)]
         use bytemuck::{Pod, Zeroable};
         use solana_program::pubkey::Pubkey;
 
@@ -363,7 +407,7 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
                 let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
                 quote! {
                     [#(#disc_pattern),*] => {
-                        let args = #args_struct::deserialize(buf)?;
+                        let args = #args_struct::deserialize(&mut buf)?;
                         Ok(Self::#variant_name(args))
                     }
                 }
