@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Idl {
-    pub version: String,
-    pub name: String,
+    #[serde(default)]
+    pub address: Option<String>,
+    pub metadata: Metadata,
     #[serde(default)]
     pub instructions: Vec<Instruction>,
     #[serde(default)]
@@ -19,43 +20,98 @@ pub struct Idl {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metadata {
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub spec: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instruction {
     pub name: String,
-    pub accounts: Vec<AccountArg>,
-    pub args: Vec<Field>,
+    #[serde(default)]
+    pub docs: Option<Vec<String>>,
     #[serde(default)]
     pub discriminator: Option<Vec<u8>>,
+    pub accounts: Vec<AccountArg>,
+    pub args: Vec<Arg>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountArg {
     pub name: String,
-    #[serde(rename = "isMut")]
-    pub is_mut: bool,
-    #[serde(rename = "isSigner")]
-    pub is_signer: bool,
     #[serde(default)]
     pub docs: Option<Vec<String>>,
+    #[serde(default)]
+    pub signer: bool,
+    #[serde(default)]
+    pub writable: bool,
+    #[serde(default)]
+    pub pda: Option<Pda>,
+    #[serde(default)]
+    pub address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pda {
+    pub seeds: Vec<Seed>,
+    #[serde(default)]
+    pub program: Option<Program>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum Seed {
+    #[serde(rename = "const")]
+    Const { value: Vec<u8> },
+    #[serde(rename = "arg")]
+    Arg { path: String },
+    #[serde(rename = "account")]
+    Account { path: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum Program {
+    #[serde(rename = "const")]
+    Const { value: Vec<u8> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Arg {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     pub name: String,
-    #[serde(rename = "type")]
-    pub ty: AccountType,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AccountType {
-    pub kind: String,
-    pub fields: Vec<Field>,
+    #[serde(default)]
+    pub discriminator: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeDef {
     pub name: String,
+    #[serde(default)]
+    pub docs: Option<Vec<String>>,
     #[serde(rename = "type")]
     pub ty: TypeDefType,
+    #[serde(default)]
+    pub serialization: Option<String>,
+    #[serde(default)]
+    pub repr: Option<Repr>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Repr {
+    pub kind: String,
+    #[serde(default)]
+    pub packed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,8 +152,52 @@ pub enum IdlType {
     Simple(String),
     Vec { vec: Box<IdlType> },
     Option { option: Box<IdlType> },
-    Array { array: [Box<IdlType>; 2] },
-    Defined { defined: String },
+    Array { array: ArrayType },
+    Defined { defined: DefinedType },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ArrayType {
+    Tuple(#[serde(with = "array_tuple")] (Box<IdlType>, usize)),
+}
+
+mod array_tuple {
+    use super::*;
+    #[allow(unused_imports)]
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(t: &(Box<IdlType>, usize), serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&*t.0)?;
+        seq.serialize_element(&t.1)?;
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<(Box<IdlType>, usize), D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let arr: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
+        if arr.len() != 2 {
+            return Err(serde::de::Error::custom("Array type must have exactly 2 elements"));
+        }
+        let ty = IdlType::deserialize(&arr[0]).map_err(serde::de::Error::custom)?;
+        let size = arr[1]
+            .as_u64()
+            .ok_or_else(|| serde::de::Error::custom("Array size must be a number"))?
+            as usize;
+        Ok((Box::new(ty), size))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefinedType {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,7 +210,8 @@ pub struct Error {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub name: String,
-    pub fields: Vec<Field>,
+    #[serde(default)]
+    pub discriminator: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

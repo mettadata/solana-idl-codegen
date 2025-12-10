@@ -32,8 +32,8 @@ fn main() -> Result<()> {
 
     let idl: idl::Idl = serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
 
-    println!("Successfully parsed IDL for program: {}", idl.name);
-    println!("Version: {}", idl.version);
+    println!("Successfully parsed IDL for program: {}", idl.metadata.name);
+    println!("Version: {}", idl.metadata.version);
     println!("Instructions: {}", idl.instructions.len());
     println!(
         "Accounts: {}",

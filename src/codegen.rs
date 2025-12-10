@@ -1,4 +1,4 @@
-use crate::idl::*;
+use crate::idl::{ArrayType, *};
 use anyhow::Result;
 use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::TokenStream;
@@ -55,6 +55,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
 
 fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
     let name = format_ident!("{}", ty.name);
+    let docs = generate_docs(ty.docs.as_ref());
 
     match &ty.ty {
         TypeDefType::Struct { fields } => {
@@ -63,15 +64,16 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                 .map(|f| {
                     let field_name = format_ident!("{}", f.name.to_snake_case());
                     let field_type = map_idl_type(&f.ty);
-                    let docs = generate_docs(f.docs.as_ref());
+                    let field_docs = generate_docs(f.docs.as_ref());
                     quote! {
-                        #docs
+                        #field_docs
                         pub #field_name: #field_type
                     }
                 })
                 .collect();
 
             Ok(quote! {
+                #docs
                 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
                 pub struct #name {
                     #(#field_tokens),*
@@ -114,29 +116,10 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
     }
 }
 
-fn generate_account(account: &Account) -> Result<TokenStream> {
-    let name = format_ident!("{}", account.name);
-    let field_tokens: Vec<_> = account
-        .ty
-        .fields
-        .iter()
-        .map(|f| {
-            let field_name = format_ident!("{}", f.name.to_snake_case());
-            let field_type = map_idl_type(&f.ty);
-            let docs = generate_docs(f.docs.as_ref());
-            quote! {
-                #docs
-                pub #field_name: #field_type
-            }
-        })
-        .collect();
-
-    Ok(quote! {
-        #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-        pub struct #name {
-            #(#field_tokens),*
-        }
-    })
+fn generate_account(_account: &Account) -> Result<TokenStream> {
+    // Accounts in this IDL format are just references - they're defined in types
+    // So we don't generate anything here, the type is already generated
+    Ok(TokenStream::new())
 }
 
 fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
@@ -163,23 +146,21 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
         }
     });
 
-    // Generate args structs for each instruction
-    for ix in instructions {
-        if !ix.args.is_empty() {
-            let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
-            let field_tokens: Vec<_> = ix
-                .args
-                .iter()
-                .map(|f| {
-                    let field_name = format_ident!("{}", f.name.to_snake_case());
-                    let field_type = map_idl_type(&f.ty);
-                    let docs = generate_docs(f.docs.as_ref());
-                    quote! {
-                        #docs
-                        pub #field_name: #field_type
-                    }
-                })
-                .collect();
+        // Generate args structs for each instruction
+        for ix in instructions {
+            if !ix.args.is_empty() {
+                let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+                let field_tokens: Vec<_> = ix
+                    .args
+                    .iter()
+                    .map(|arg| {
+                        let field_name = format_ident!("{}", arg.name.to_snake_case());
+                        let field_type = map_arg_type(&arg.ty);
+                        quote! {
+                            pub #field_name: #field_type
+                        }
+                    })
+                    .collect();
 
             tokens.extend(quote! {
                 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
@@ -237,28 +218,10 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
     })
 }
 
-fn generate_event(event: &Event) -> Result<TokenStream> {
-    let name = format_ident!("{}", event.name);
-    let field_tokens: Vec<_> = event
-        .fields
-        .iter()
-        .map(|f| {
-            let field_name = format_ident!("{}", f.name.to_snake_case());
-            let field_type = map_idl_type(&f.ty);
-            let docs = generate_docs(f.docs.as_ref());
-            quote! {
-                #docs
-                pub #field_name: #field_type
-            }
-        })
-        .collect();
-
-    Ok(quote! {
-        #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-        pub struct #name {
-            #(#field_tokens),*
-        }
-    })
+fn generate_event(_event: &Event) -> Result<TokenStream> {
+    // Events in this IDL format are just references - they're defined in types
+    // So we don't generate anything here, the type is already generated
+    Ok(TokenStream::new())
 }
 
 fn map_idl_type(ty: &IdlType) -> TokenStream {
@@ -294,16 +257,15 @@ fn map_idl_type(ty: &IdlType) -> TokenStream {
             quote! { Option<#inner> }
         }
         IdlType::Array { array } => {
-            let inner = map_idl_type(&array[0]);
-            if let IdlType::Simple(size_str) = &*array[1] {
-                if let Ok(size) = size_str.parse::<usize>() {
-                    return quote! { [#inner; #size] };
+            match array {
+                ArrayType::Tuple((inner, size)) => {
+                    let inner_ty = map_idl_type(inner);
+                    quote! { [#inner_ty; #size] }
                 }
             }
-            quote! { Vec<#inner> }
         }
         IdlType::Defined { defined } => {
-            let ident = format_ident!("{}", defined);
+            let ident = format_ident!("{}", defined.name);
             quote! { #ident }
         }
     }
@@ -313,10 +275,36 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
     if let Some(doc_lines) = docs {
         let docs: Vec<_> = doc_lines
             .iter()
+            .filter(|line| !line.is_empty())
             .map(|line| quote! { #[doc = #line] })
             .collect();
         quote! { #(#docs)* }
     } else {
         TokenStream::new()
+    }
+}
+
+fn map_arg_type(ty: &str) -> TokenStream {
+    match ty {
+        "bool" => quote! { bool },
+        "u8" => quote! { u8 },
+        "i8" => quote! { i8 },
+        "u16" => quote! { u16 },
+        "i16" => quote! { i16 },
+        "u32" => quote! { u32 },
+        "i32" => quote! { i32 },
+        "u64" => quote! { u64 },
+        "i64" => quote! { i64 },
+        "u128" => quote! { u128 },
+        "i128" => quote! { i128 },
+        "f32" => quote! { f32 },
+        "f64" => quote! { f64 },
+        "string" => quote! { String },
+        "publicKey" | "pubkey" | "Pubkey" => quote! { Pubkey },
+        "bytes" => quote! { Vec<u8> },
+        _ => {
+            let ident = format_ident!("{}", ty);
+            quote! { #ident }
+        }
     }
 }
