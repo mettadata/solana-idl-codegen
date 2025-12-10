@@ -4,7 +4,13 @@ use serde::{Deserialize, Serialize};
 pub struct Idl {
     #[serde(default)]
     pub address: Option<String>,
-    pub metadata: Metadata,
+    // Old format IDLs have version and name at top level, new format has metadata
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<Metadata>,
     #[serde(default)]
     pub instructions: Vec<Instruction>,
     #[serde(default)]
@@ -17,6 +23,28 @@ pub struct Idl {
     pub events: Option<Vec<Event>>,
     #[serde(default)]
     pub constants: Option<Vec<Constant>>,
+}
+
+impl Idl {
+    pub fn get_name(&self) -> &str {
+        if let Some(ref metadata) = self.metadata {
+            &metadata.name
+        } else if let Some(ref name) = self.name {
+            name
+        } else {
+            "unknown"
+        }
+    }
+
+    pub fn get_version(&self) -> &str {
+        if let Some(ref metadata) = self.metadata {
+            &metadata.version
+        } else if let Some(ref version) = self.version {
+            version
+        } else {
+            "0.0.0"
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,14 +73,17 @@ pub struct AccountArg {
     pub name: String,
     #[serde(default)]
     pub docs: Option<Vec<String>>,
-    #[serde(default)]
+    // Support both old and new format
+    #[serde(default, alias = "isSigner")]
     pub signer: bool,
-    #[serde(default)]
+    #[serde(default, alias = "isMut")]
     pub writable: bool,
     #[serde(default)]
     pub pda: Option<Pda>,
     #[serde(default)]
     pub address: Option<String>,
+    #[serde(default)]
+    pub optional: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,7 +115,7 @@ pub enum Program {
 pub struct Arg {
     pub name: String,
     #[serde(rename = "type")]
-    pub ty: String,
+    pub ty: IdlType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +123,10 @@ pub struct Account {
     pub name: String,
     #[serde(default)]
     pub discriminator: Option<Vec<u8>>,
+    #[serde(default)]
+    pub docs: Option<Vec<String>>,
+    #[serde(rename = "type", default)]
+    pub ty: Option<TypeDefType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +188,23 @@ pub enum IdlType {
     Vec { vec: Box<IdlType> },
     Option { option: Box<IdlType> },
     Array { array: ArrayType },
-    Defined { defined: DefinedType },
+    Defined { defined: DefinedTypeOrString },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DefinedTypeOrString {
+    String(String),
+    Nested(DefinedType),
+}
+
+impl DefinedTypeOrString {
+    pub fn name(&self) -> &str {
+        match self {
+            DefinedTypeOrString::String(s) => s,
+            DefinedTypeOrString::Nested(d) => &d.name,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

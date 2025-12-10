@@ -11,3 +11,11 @@ anyhow = "1.0"
 quote = "1.0"
 proc-macro2 = "1.0"
 heck = "0.5"
+prettyplease = "0.2"
+syn = { version = "2.0", features = ["full"] }
+
+[dev-dependencies]
+# These are used in the generated code
+borsh = "1.5"
+bytemuck = "1.14"
+solana-program = "1.18"

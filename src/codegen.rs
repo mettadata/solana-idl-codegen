@@ -3,6 +3,7 @@ use anyhow::Result;
 use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::parse_str;
 
 pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     let mut tokens = TokenStream::new();
@@ -40,22 +41,52 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     }
 
     // Format the code
+    // Note: We use outer attributes (#[]) instead of inner (#![]) so the generated
+    // code can be included with include!() in modules
     let code = quote! {
-        #![allow(clippy::all)]
-        #![allow(dead_code)]
-
         use borsh::{BorshDeserialize, BorshSerialize};
+        use bytemuck::{Pod, Zeroable};
         use solana_program::pubkey::Pubkey;
+
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
+        const _: () = {
+            // This const block ensures the allows are applied to all items
+        };
 
         #tokens
     };
 
-    Ok(code.to_string())
+    // Parse and pretty-print the generated code
+    let syntax_tree: syn::File = parse_str(&code.to_string())?;
+    Ok(prettyplease::unparse(&syntax_tree))
 }
 
 fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
     let name = format_ident!("{}", ty.name);
     let docs = generate_docs(ty.docs.as_ref());
+
+    // Determine serialization type
+    let use_bytemuck = ty
+        .serialization
+        .as_ref()
+        .map(|s| s == "bytemuckunsafe" || s == "bytemuck")
+        .unwrap_or(false);
+
+    // Check if type is packed (for repr attribute)
+    let is_packed = ty
+        .repr
+        .as_ref()
+        .and_then(|r| r.packed)
+        .unwrap_or(false);
+
+    let repr_attr = if use_bytemuck && is_packed {
+        quote! { #[repr(C, packed)] }
+    } else if use_bytemuck {
+        quote! { #[repr(C)] }
+    } else {
+        quote! {}
+    };
 
     match &ty.ty {
         TypeDefType::Struct { fields } => {
@@ -72,13 +103,29 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                 })
                 .collect();
 
-            Ok(quote! {
-                #docs
-                #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-                pub struct #name {
-                    #(#field_tokens),*
-                }
-            })
+            if use_bytemuck {
+                // For bytemuck types, we need unsafe implementations for Pod and Zeroable
+                Ok(quote! {
+                    #docs
+                    #repr_attr
+                    #[derive(Debug, Clone, Copy, PartialEq)]
+                    pub struct #name {
+                        #(#field_tokens),*
+                    }
+
+                    unsafe impl bytemuck::Pod for #name {}
+                    unsafe impl bytemuck::Zeroable for #name {}
+                })
+            } else {
+                Ok(quote! {
+                    #docs
+                    #repr_attr
+                    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                    pub struct #name {
+                        #(#field_tokens),*
+                    }
+                })
+            }
         }
         TypeDefType::Enum { variants } => {
             let variant_tokens: Vec<_> = variants
@@ -106,20 +153,47 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                 })
                 .collect();
 
-            Ok(quote! {
-                #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-                pub enum #name {
-                    #(#variant_tokens),*
-                }
-            })
+            if use_bytemuck {
+                // For bytemuck enums, we need unsafe implementations
+                Ok(quote! {
+                    #docs
+                    #repr_attr
+                    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+                    pub enum #name {
+                        #(#variant_tokens),*
+                    }
+
+                    unsafe impl bytemuck::Pod for #name {}
+                    unsafe impl bytemuck::Zeroable for #name {}
+                })
+            } else {
+                Ok(quote! {
+                    #docs
+                    #repr_attr
+                    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                    pub enum #name {
+                        #(#variant_tokens),*
+                    }
+                })
+            }
         }
     }
 }
 
-fn generate_account(_account: &Account) -> Result<TokenStream> {
-    // Accounts in this IDL format are just references - they're defined in types
-    // So we don't generate anything here, the type is already generated
-    Ok(TokenStream::new())
+fn generate_account(account: &Account) -> Result<TokenStream> {
+    // In old format IDLs, accounts can have type definitions
+    // In new format IDLs, they're just references
+    if let Some(ty) = &account.ty {
+        generate_type_def(&TypeDef {
+            name: account.name.clone(),
+            docs: account.docs.clone(),
+            ty: ty.clone(),
+            serialization: None,
+            repr: None,
+        })
+    } else {
+        Ok(TokenStream::new())
+    }
 }
 
 fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
@@ -155,7 +229,7 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
                 .iter()
                 .map(|arg| {
                     let field_name = format_ident!("{}", arg.name.to_snake_case());
-                    let field_type = map_arg_type(&arg.ty);
+                    let field_type = map_idl_type(&arg.ty);
                     quote! {
                         pub #field_name: #field_type
                     }
@@ -263,7 +337,7 @@ fn map_idl_type(ty: &IdlType) -> TokenStream {
             }
         },
         IdlType::Defined { defined } => {
-            let ident = format_ident!("{}", defined.name);
+            let ident = format_ident!("{}", defined.name());
             quote! { #ident }
         }
     }
@@ -282,27 +356,3 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
     }
 }
 
-fn map_arg_type(ty: &str) -> TokenStream {
-    match ty {
-        "bool" => quote! { bool },
-        "u8" => quote! { u8 },
-        "i8" => quote! { i8 },
-        "u16" => quote! { u16 },
-        "i16" => quote! { i16 },
-        "u32" => quote! { u32 },
-        "i32" => quote! { i32 },
-        "u64" => quote! { u64 },
-        "i64" => quote! { i64 },
-        "u128" => quote! { u128 },
-        "i128" => quote! { i128 },
-        "f32" => quote! { f32 },
-        "f64" => quote! { f64 },
-        "string" => quote! { String },
-        "publicKey" | "pubkey" | "Pubkey" => quote! { Pubkey },
-        "bytes" => quote! { Vec<u8> },
-        _ => {
-            let ident = format_ident!("{}", ty);
-            quote! { #ident }
-        }
-    }
-}
