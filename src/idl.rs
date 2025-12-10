@@ -28,8 +28,11 @@ pub struct Idl {
 impl Idl {
     pub fn get_name(&self) -> &str {
         if let Some(ref metadata) = self.metadata {
-            &metadata.name
-        } else if let Some(ref name) = self.name {
+            if let Some(ref name) = metadata.name {
+                return name;
+            }
+        }
+        if let Some(ref name) = self.name {
             name
         } else {
             "unknown"
@@ -38,8 +41,11 @@ impl Idl {
 
     pub fn get_version(&self) -> &str {
         if let Some(ref metadata) = self.metadata {
-            &metadata.version
-        } else if let Some(ref version) = self.version {
+            if let Some(ref version) = metadata.version {
+                return version;
+            }
+        }
+        if let Some(ref version) = self.version {
             version
         } else {
             "0.0.0"
@@ -49,12 +55,16 @@ impl Idl {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
-    pub name: String,
-    pub version: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
     #[serde(default)]
     pub spec: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +275,17 @@ pub struct Event {
     pub name: String,
     #[serde(default)]
     pub discriminator: Option<Vec<u8>>,
+    #[serde(default)]
+    pub fields: Option<Vec<EventField>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: IdlType,
+    #[serde(default)]
+    pub index: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

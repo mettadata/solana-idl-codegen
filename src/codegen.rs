@@ -11,17 +11,61 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     // Generate module header
     let _module_ident = format_ident!("{}", module_name);
 
-    // Generate types
-    if let Some(types) = &idl.types {
-        for ty in types {
-            tokens.extend(generate_type_def(ty)?);
+    // Generate account discriminators
+    // Note: In new format IDLs, accounts reference types that are generated separately
+    // We'll add discriminator impl blocks for accounts that match type names
+    let mut account_discriminators = std::collections::HashMap::new();
+    if let Some(accounts) = &idl.accounts {
+        for account in accounts {
+            if let Some(disc) = &account.discriminator {
+                account_discriminators.insert(account.name.clone(), disc.clone());
+            }
+            // Only generate if account has type definition (old format)
+            if account.ty.is_some() {
+                tokens.extend(generate_account(account)?);
+            }
         }
     }
 
-    // Generate account structs
-    if let Some(accounts) = &idl.accounts {
-        for account in accounts {
-            tokens.extend(generate_account(account)?);
+    // Generate types (including those referenced by accounts)
+    if let Some(types) = &idl.types {
+        for ty in types {
+            let mut type_tokens = generate_type_def(ty)?;
+            
+            // Add discriminator methods if there's a matching account discriminator
+            if let Some(disc) = account_discriminators.get(&ty.name) {
+                let name = format_ident!("{}", ty.name);
+                let disc_bytes = disc.iter().map(|b| quote! { #b });
+                
+                type_tokens.extend(quote! {
+                    impl #name {
+                        pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
+                        
+                        pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
+                            if data.len() < 8 {
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "Data too short for discriminator",
+                                ));
+                            }
+                            if data[..8] != Self::DISCRIMINATOR {
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "Invalid discriminator",
+                                ));
+                            }
+                            borsh::BorshDeserialize::try_from_slice(&data[8..])
+                        }
+                        
+                        pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                            writer.write_all(&Self::DISCRIMINATOR)?;
+                            borsh::BorshSerialize::serialize(self, writer)
+                        }
+                    }
+                });
+            }
+            
+            tokens.extend(type_tokens);
         }
     }
 
@@ -58,7 +102,16 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<String> {
     };
 
     // Parse and pretty-print the generated code
-    let syntax_tree: syn::File = parse_str(&code.to_string())?;
+    let code_str = code.to_string();
+    let syntax_tree: syn::File = parse_str(&code_str).map_err(|e| {
+        // Write the unparsed code to a temp file for debugging
+        if let Err(write_err) = std::fs::write("/tmp/failed_codegen.rs", &code_str) {
+            eprintln!("Failed to write debug file: {}", write_err);
+        } else {
+            eprintln!("Unparsed code written to /tmp/failed_codegen.rs");
+        }
+        anyhow::anyhow!("Failed to parse generated code: {}", e)
+    })?;
     Ok(prettyplease::unparse(&syntax_tree))
 }
 
@@ -182,16 +235,53 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
 
 fn generate_account(account: &Account) -> Result<TokenStream> {
     // In old format IDLs, accounts can have type definitions
-    // In new format IDLs, they're just references
+    // In new format IDLs, they're just references (discriminators added to types directly)
     if let Some(ty) = &account.ty {
-        generate_type_def(&TypeDef {
+        let mut tokens = generate_type_def(&TypeDef {
             name: account.name.clone(),
             docs: account.docs.clone(),
             ty: ty.clone(),
             serialization: None,
             repr: None,
-        })
+        })?;
+        
+        // Add discriminator methods if discriminator is present
+        if let Some(disc) = &account.discriminator {
+            let name = format_ident!("{}", account.name);
+            let disc_bytes = disc.iter().map(|b| quote! { #b });
+            
+            tokens.extend(quote! {
+                impl #name {
+                    pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
+                    
+                    pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
+                        if data.len() < 8 {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Data too short for discriminator",
+                            ));
+                        }
+                        if data[..8] != Self::DISCRIMINATOR {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid discriminator",
+                            ));
+                        }
+                        borsh::BorshDeserialize::try_from_slice(&data[8..])
+                    }
+                    
+                    pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                        writer.write_all(&Self::DISCRIMINATOR)?;
+                        borsh::BorshSerialize::serialize(self, writer)
+                    }
+                }
+            });
+        }
+        
+        Ok(tokens)
     } else {
+        // In new format, accounts are references to types defined elsewhere
+        // Discriminators are added directly to the type definitions
         Ok(TokenStream::new())
     }
 }
@@ -202,7 +292,8 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
     // Generate instruction enum
     let instruction_variants: Vec<_> = instructions
         .iter()
-        .map(|ix| {
+        .enumerate()
+        .map(|(_idx, ix)| {
             let variant_name = format_ident!("{}", ix.name.to_pascal_case());
             if ix.args.is_empty() {
                 quote! { #variant_name }
@@ -213,10 +304,103 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
         })
         .collect();
 
+    // Generate discriminator match arms for serialization
+    let serialize_arms: Vec<_> = instructions
+        .iter()
+        .enumerate()
+        .map(|(idx, ix)| {
+            let variant_name = format_ident!("{}", ix.name.to_pascal_case());
+            let discriminator = if let Some(disc) = &ix.discriminator {
+                let disc_bytes = disc.iter().map(|b| quote! { #b });
+                quote! { [#(#disc_bytes),*] }
+            } else {
+                // Use index as discriminator if not provided (old format)
+                let idx_bytes = (idx as u64).to_le_bytes();
+                let bytes = idx_bytes.iter().map(|b| quote! { #b });
+                quote! { [#(#bytes),*] }
+            };
+            
+            if ix.args.is_empty() {
+                quote! {
+                    Self::#variant_name => {
+                        writer.write_all(&#discriminator)?;
+                        Ok(())
+                    }
+                }
+            } else {
+                quote! {
+                    Self::#variant_name(args) => {
+                        writer.write_all(&#discriminator)?;
+                        args.serialize(writer)
+                    }
+                }
+            }
+        })
+        .collect();
+
+    // Generate discriminator match for deserialization
+    let deserialize_arms: Vec<_> = instructions
+        .iter()
+        .enumerate()
+        .map(|(idx, ix)| {
+            let variant_name = format_ident!("{}", ix.name.to_pascal_case());
+            let discriminator_bytes = if let Some(disc) = &ix.discriminator {
+                disc.clone()
+            } else {
+                // Use index as discriminator if not provided (old format)
+                (idx as u64).to_le_bytes().to_vec()
+            };
+            
+            let disc_pattern = discriminator_bytes.iter().map(|b| quote! { #b });
+            
+            if ix.args.is_empty() {
+                quote! {
+                    [#(#disc_pattern),*] => Ok(Self::#variant_name)
+                }
+            } else {
+                let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+                quote! {
+                    [#(#disc_pattern),*] => {
+                        let args = #args_struct::deserialize(buf)?;
+                        Ok(Self::#variant_name(args))
+                    }
+                }
+            }
+        })
+        .collect();
+
     tokens.extend(quote! {
-        #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+        #[derive(Debug, Clone, PartialEq)]
         pub enum Instruction {
             #(#instruction_variants),*
+        }
+        
+        impl Instruction {
+            pub fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                match self {
+                    #(#serialize_arms),*
+                }
+            }
+            
+            pub fn try_from_slice(data: &[u8]) -> std::io::Result<Self> {
+                if data.len() < 8 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Data too short for instruction discriminator",
+                    ));
+                }
+                
+                use borsh::BorshDeserialize;
+                let mut buf = &data[8..];
+                
+                match &data[..8] {
+                    #(#deserialize_arms),*,
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Unknown instruction discriminator",
+                    )),
+                }
+            }
         }
     });
 
@@ -292,10 +476,63 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
     })
 }
 
-fn generate_event(_event: &Event) -> Result<TokenStream> {
-    // Events in this IDL format are just references - they're defined in types
-    // So we don't generate anything here, the type is already generated
-    Ok(TokenStream::new())
+fn generate_event(event: &Event) -> Result<TokenStream> {
+    // If event has fields, generate a struct for it
+    if let Some(fields) = &event.fields {
+        let name = format_ident!("{}", event.name);
+        let docs = format!("Event: {}", event.name);
+        
+        let field_tokens: Vec<_> = fields
+            .iter()
+            .map(|f| {
+                let field_name = format_ident!("{}", f.name.to_snake_case());
+                let field_type = map_idl_type(&f.ty);
+                quote! {
+                    pub #field_name: #field_type
+                }
+            })
+            .collect();
+
+        let discriminator_code = if let Some(disc) = &event.discriminator {
+            let disc_bytes = disc.iter().map(|b| quote! { #b });
+            quote! {
+                impl #name {
+                    pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
+                    
+                    pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::result::Result<Self, std::io::Error> {
+                        if data.len() < 8 {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Data too short for discriminator",
+                            ));
+                        }
+                        if data[..8] != Self::DISCRIMINATOR {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid discriminator",
+                            ));
+                        }
+                        Self::try_from_slice(&data[8..])
+                    }
+                }
+            }
+        } else {
+            quote! {}
+        };
+
+        Ok(quote! {
+            #[doc = #docs]
+            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+            pub struct #name {
+                #(#field_tokens),*
+            }
+            
+            #discriminator_code
+        })
+    } else {
+        // Events without fields are just references - they're defined in types
+        Ok(TokenStream::new())
+    }
 }
 
 fn map_idl_type(ty: &IdlType) -> TokenStream {
