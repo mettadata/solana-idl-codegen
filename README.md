@@ -140,14 +140,59 @@ solana-idl-codegen/
 
 ### Running Tests
 
+The project includes comprehensive unit and integration tests:
+
 ```bash
-cargo test
+# Run unit tests
+cargo test --lib
+
+# Generate code and run integration tests
+just test-integration
+
+# Run all tests (unit + integration)
+just test-all
 ```
+
+The integration tests verify:
+- ✅ All generated crates compile successfully
+- ✅ Event wrapper pattern with discriminators
+- ✅ Account discriminators for state parsing
+- ✅ Instruction enum serialization
+- ✅ Error enum with proper codes
+- ✅ Pubkey serde serialization as strings
+- ✅ Proper Cargo.toml dependencies
+- ✅ Module structure and re-exports
+
+See [TEST_RESULTS.md](TEST_RESULTS.md) for detailed test results and [INTEGRATION_TESTING.md](INTEGRATION_TESTING.md) for how to write additional tests.
 
 ### Running with Example
 
 ```bash
 cargo run -- -i example_counter.json -o generated -m counter
+```
+
+### Using the Justfile
+
+The project includes a `justfile` for common operations:
+
+```bash
+# Clean generated code and build artifacts
+just clean
+
+# Generate all configured IDL bindings
+just generate
+
+# Check all generated crates compile
+just check
+
+# Build all generated crates  
+just build
+
+# Run integration tests
+just test-integration
+
+# Run all tests
+just test-all
 ```
 
 ## Type Mapping

@@ -35,3 +35,22 @@ build:
 
 test:
     cargo test
+
+# Run integration tests (requires generated code)
+test-integration: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running integration tests..."
+    cargo test --test integration_tests -- --nocapture
+
+# Run all tests including integration tests
+test-all: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running unit tests..."
+    cargo test 
+    echo ""
+    echo "Running integration tests..."
+    cargo test --test integration_tests -- --nocapture
+    echo ""
+    echo "✓ All tests passed!"
