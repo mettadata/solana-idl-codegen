@@ -1,3 +1,6 @@
 [submodule "idl/raydium-idl"]
 	path = idl/raydium-idl
 	url = git@github.com:raydium-io/raydium-idl.git
+[submodule "idl/pump-public-docs"]
+	path = idl/pump-public-docs
+	url = git@github.com:pump-fun/pump-public-docs.git
