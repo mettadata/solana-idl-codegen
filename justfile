@@ -14,9 +14,14 @@ check: generate
     cd generated/raydium_clmm && cargo check
     cd generated/raydium_cpmm && cargo check
     cd generated/pumpfun && cargo check
+    cd generated/pumpfun_amm && cargo check
 
 build:
     cd generated/raydium_amm && cargo build
     cd generated/raydium_clmm && cargo build
     cd generated/raydium_cpmm && cargo build
     cd generated/pumpfun && cargo build
+    cd generated/pumpfun_amm && cargo build
+
+test:
+    cargo test 

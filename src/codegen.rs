@@ -148,7 +148,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     // Generate events
     if let Some(events) = &idl.events {
         for event in events {
-            events_tokens.extend(generate_event(event)?);
+            events_tokens.extend(generate_event(event, &idl.types)?);
         }
     }
 
@@ -922,34 +922,18 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
     })
 }
 
-fn generate_event(event: &Event) -> Result<TokenStream> {
-    // If event has fields, generate a struct for it
-    if let Some(fields) = &event.fields {
-        let mut tokens = TokenStream::new();
-        
-        let name = format_ident!("{}", event.name);
-        let wrapper_name = format_ident!("{}Event", event.name);
-        let docs = format!("Event: {}", event.name);
-        
-        // Generate module-level discriminator constant
-        if let Some(disc) = &event.discriminator {
-            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
-            let disc_bytes = disc.iter().map(|b| quote! { #b });
-            
-            tokens.extend(quote! {
-                pub const #discm_const: [u8; 8] = [#(#disc_bytes),*];
-            });
+fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenStream> {
+    // Helper function to check if a type is Pubkey
+    fn is_pubkey_type(ty: &IdlType) -> bool {
+        match ty {
+            IdlType::Simple(s) => matches!(s.as_str(), "publicKey" | "pubkey" | "Pubkey"),
+            _ => false,
         }
-        
-        // Helper function to check if a type is Pubkey
-        fn is_pubkey_type(ty: &IdlType) -> bool {
-            match ty {
-                IdlType::Simple(s) => matches!(s.as_str(), "publicKey" | "pubkey" | "Pubkey"),
-                _ => false,
-            }
-        }
-        
-        let field_tokens: Vec<_> = fields
+    }
+    
+    // Helper function to generate field tokens with Pubkey serialization
+    fn generate_field_tokens(fields: &[EventField]) -> Vec<TokenStream> {
+        fields
             .iter()
             .map(|f| {
                 let field_name = format_ident!("{}", f.name.to_snake_case());
@@ -969,57 +953,134 @@ fn generate_event(event: &Event) -> Result<TokenStream> {
                     pub #field_name: #field_type
                 }
             })
-            .collect();
-
-        // Generate data struct
+            .collect()
+    }
+    
+    // Helper function to generate field tokens from struct fields
+    fn generate_field_tokens_from_struct_fields(fields: &StructFields) -> Vec<TokenStream> {
+        match fields {
+            StructFields::Named(named_fields) => {
+                named_fields
+                    .iter()
+                    .map(|f| {
+                        let field_name = format_ident!("{}", f.name.to_snake_case());
+                        let field_type = map_idl_type(&f.ty);
+                        
+                        // Add custom serde attribute for Pubkey fields
+                        let serde_attr = if is_pubkey_type(&f.ty) {
+                            quote! {
+                                #[cfg_attr(feature = "serde", serde(serialize_with = "crate::serialize_pubkey_as_string"))]
+                            }
+                        } else {
+                            quote! {}
+                        };
+                        
+                        quote! {
+                            #serde_attr
+                            pub #field_name: #field_type
+                        }
+                    })
+                    .collect()
+            }
+            StructFields::Tuple(_) => {
+                // Tuple structs as events are unusual, just skip them
+                vec![]
+            }
+        }
+    }
+    
+    let name = format_ident!("{}", event.name);
+    let wrapper_name = format_ident!("{}Event", event.name);
+    let docs = format!("Event: {}", event.name);
+    
+    // Determine if we have fields to generate
+    let field_tokens = if let Some(fields) = &event.fields {
+        // Old format: fields are directly in the event
+        generate_field_tokens(fields)
+    } else if let Some(types) = types {
+        // New format: look for the type definition
+        if let Some(type_def) = types.iter().find(|t| t.name == event.name) {
+            // Found the type definition for this event
+            match &type_def.ty {
+                TypeDefType::Struct { fields } => {
+                    generate_field_tokens_from_struct_fields(fields)
+                }
+                TypeDefType::Enum { .. } => {
+                    // Enums as events are unusual, skip them
+                    return Ok(TokenStream::new());
+                }
+            }
+        } else {
+            // No fields and no matching type definition
+            return Ok(TokenStream::new());
+        }
+    } else {
+        // No fields and no types to look up
+        return Ok(TokenStream::new());
+    };
+    
+    // If we have no fields, return empty
+    if field_tokens.is_empty() {
+        return Ok(TokenStream::new());
+    }
+    
+    let mut tokens = TokenStream::new();
+    
+    // Generate module-level discriminator constant
+    if let Some(disc) = &event.discriminator {
+        let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+        let disc_bytes = disc.iter().map(|b| quote! { #b });
+        
         tokens.extend(quote! {
-            #[doc = #docs]
-            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+            pub const #discm_const: [u8; 8] = [#(#disc_bytes),*];
+        });
+    }
+    
+    // Generate data struct
+    tokens.extend(quote! {
+        #[doc = #docs]
+        #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        pub struct #name {
+            #(#field_tokens),*
+        }
+    });
+
+    // Generate wrapper struct with discriminator handling
+    if let Some(_disc) = &event.discriminator {
+        let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+        
+        tokens.extend(quote! {
+            #[derive(Clone, Debug, PartialEq)]
             #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-            pub struct #name {
-                #(#field_tokens),*
+            pub struct #wrapper_name(pub #name);
+            
+            impl borsh::BorshSerialize for #wrapper_name {
+                fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                    #discm_const.serialize(writer)?;
+                    self.0.serialize(writer)
+                }
+            }
+            
+            impl #wrapper_name {
+                pub fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+                    let maybe_discm = <[u8; 8]>::deserialize(buf)?;
+                    if maybe_discm != #discm_const {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "discm does not match. Expected: {:?}. Received: {:?}",
+                                #discm_const, maybe_discm
+                            )
+                        ));
+                    }
+                    Ok(Self(#name::deserialize(buf)?))
+                }
             }
         });
-
-        // Generate wrapper struct with discriminator handling
-        if let Some(_disc) = &event.discriminator {
-            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
-            
-            tokens.extend(quote! {
-                #[derive(Clone, Debug, PartialEq)]
-                #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-                pub struct #wrapper_name(pub #name);
-                
-                impl borsh::BorshSerialize for #wrapper_name {
-                    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-                        #discm_const.serialize(writer)?;
-                        self.0.serialize(writer)
-                    }
-                }
-                
-                impl #wrapper_name {
-                    pub fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
-                        let maybe_discm = <[u8; 8]>::deserialize(buf)?;
-                        if maybe_discm != #discm_const {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!(
-                                    "discm does not match. Expected: {:?}. Received: {:?}",
-                                    #discm_const, maybe_discm
-                                )
-                            ));
-                        }
-                        Ok(Self(#name::deserialize(buf)?))
-                    }
-                }
-            });
-        }
-        
-        Ok(tokens)
-    } else {
-        // Events without fields are just references - they're defined in types
-        Ok(TokenStream::new())
     }
+    
+    Ok(tokens)
 }
 
 fn map_idl_type(ty: &IdlType) -> TokenStream {
@@ -1593,7 +1654,7 @@ mod tests {
             ]),
         };
 
-        let result = generate_event(&event).unwrap();
+        let result = generate_event(&event, &None).unwrap();
         let result_str = result.to_string();
 
         // Check for module-level discriminator constant
@@ -1626,7 +1687,7 @@ mod tests {
             }]),
         };
 
-        let result = generate_event(&event).unwrap();
+        let result = generate_event(&event, &None).unwrap();
         let result_str = result.to_string();
 
         assert!(result_str.contains("pub struct SimpleEvent"));
@@ -1641,11 +1702,68 @@ mod tests {
             fields: None,
         };
 
-        let result = generate_event(&event).unwrap();
+        let result = generate_event(&event, &None).unwrap();
         let result_str = result.to_string();
 
         // Events without fields should not generate anything
         assert_eq!(result_str, "");
+    }
+
+    #[test]
+    fn test_generate_event_from_type_definition() {
+        // New IDL format: event has only name and discriminator, 
+        // fields are in a matching type definition
+        let event = Event {
+            name: "AdminSetCreatorEvent".to_string(),
+            discriminator: Some(vec![64, 69, 192, 104, 29, 30, 25, 107]),
+            fields: None, // No fields in event itself
+        };
+
+        let types = Some(vec![TypeDef {
+            name: "AdminSetCreatorEvent".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: StructFields::Named(vec![
+                    Field {
+                        name: "timestamp".to_string(),
+                        ty: IdlType::Simple("i64".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "admin_set_creator_authority".to_string(),
+                        ty: IdlType::Simple("pubkey".to_string()),
+                        docs: None,
+                    },
+                    Field {
+                        name: "mint".to_string(),
+                        ty: IdlType::Simple("pubkey".to_string()),
+                        docs: None,
+                    },
+                ]),
+            },
+            serialization: None,
+            repr: None,
+        }]);
+
+        let result = generate_event(&event, &types).unwrap();
+        let result_str = result.to_string();
+
+        // Check for module-level discriminator constant
+        assert!(result_str.contains("ADMIN_SET_CREATOR_EVENT_EVENT_DISCM"));
+        assert!(result_str.contains("[64u8 , 69u8 , 192u8 , 104u8 , 29u8 , 30u8 , 25u8 , 107u8]"));
+        
+        // Check for data struct
+        assert!(result_str.contains("pub struct AdminSetCreatorEvent"));
+        assert!(result_str.contains("pub timestamp : i64"));
+        assert!(result_str.contains("pub admin_set_creator_authority : Pubkey"));
+        assert!(result_str.contains("pub mint : Pubkey"));
+        
+        // Check for wrapper struct
+        assert!(result_str.contains("pub struct AdminSetCreatorEventEvent"));
+        assert!(result_str.contains("pub fn deserialize"));
+        
+        // Check for custom serde serialization of Pubkey fields
+        assert!(result_str.contains("serialize_pubkey_as_string"));
     }
 
     // ============================================================================
