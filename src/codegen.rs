@@ -268,6 +268,18 @@ pub use accounts::*;
 pub use instructions::*;
 pub use errors::*;
 pub use events::*;
+
+// Helper function for serde serialization of Pubkey as string
+#[cfg(feature = "serde")]
+pub fn serialize_pubkey_as_string<S>(
+    pubkey: &solana_program::pubkey::Pubkey,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{{
+    serializer.serialize_str(&pubkey.to_string())
+}}
 "#,
         program_id_declaration
     )
@@ -874,57 +886,97 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
 fn generate_event(event: &Event) -> Result<TokenStream> {
     // If event has fields, generate a struct for it
     if let Some(fields) = &event.fields {
+        let mut tokens = TokenStream::new();
+        
         let name = format_ident!("{}", event.name);
+        let wrapper_name = format_ident!("{}Event", event.name);
         let docs = format!("Event: {}", event.name);
+        
+        // Generate module-level discriminator constant
+        if let Some(disc) = &event.discriminator {
+            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+            let disc_bytes = disc.iter().map(|b| quote! { #b });
+            
+            tokens.extend(quote! {
+                pub const #discm_const: [u8; 8] = [#(#disc_bytes),*];
+            });
+        }
+        
+        // Helper function to check if a type is Pubkey
+        fn is_pubkey_type(ty: &IdlType) -> bool {
+            match ty {
+                IdlType::Simple(s) => matches!(s.as_str(), "publicKey" | "pubkey" | "Pubkey"),
+                _ => false,
+            }
+        }
         
         let field_tokens: Vec<_> = fields
             .iter()
             .map(|f| {
                 let field_name = format_ident!("{}", f.name.to_snake_case());
                 let field_type = map_idl_type(&f.ty);
+                
+                // Add custom serde attribute for Pubkey fields
+                let serde_attr = if is_pubkey_type(&f.ty) {
+                    quote! {
+                        #[cfg_attr(feature = "serde", serde(serialize_with = "crate::serialize_pubkey_as_string"))]
+                    }
+                } else {
+                    quote! {}
+                };
+                
                 quote! {
+                    #serde_attr
                     pub #field_name: #field_type
                 }
             })
             .collect();
 
-        let discriminator_code = if let Some(disc) = &event.discriminator {
-            let disc_bytes = disc.iter().map(|b| quote! { #b });
-            quote! {
-                impl #name {
-                    pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
-                    
-                    pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::result::Result<Self, std::io::Error> {
-                        if data.len() < 8 {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "Data too short for discriminator",
-                            ));
-                        }
-                        if data[..8] != Self::DISCRIMINATOR {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "Invalid discriminator",
-                            ));
-                        }
-                        Self::try_from_slice(&data[8..])
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
-
-        Ok(quote! {
+        // Generate data struct
+        tokens.extend(quote! {
             #[doc = #docs]
             #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
             #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
             pub struct #name {
                 #(#field_tokens),*
             }
+        });
+
+        // Generate wrapper struct with discriminator handling
+        if let Some(_disc) = &event.discriminator {
+            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
             
-            #discriminator_code
-        })
+            tokens.extend(quote! {
+                #[derive(Clone, Debug, PartialEq)]
+                #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+                pub struct #wrapper_name(pub #name);
+                
+                impl borsh::BorshSerialize for #wrapper_name {
+                    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                        #discm_const.serialize(writer)?;
+                        self.0.serialize(writer)
+                    }
+                }
+                
+                impl #wrapper_name {
+                    pub fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+                        let maybe_discm = <[u8; 8]>::deserialize(buf)?;
+                        if maybe_discm != #discm_const {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "discm does not match. Expected: {:?}. Received: {:?}",
+                                    #discm_const, maybe_discm
+                                )
+                            ));
+                        }
+                        Ok(Self(#name::deserialize(buf)?))
+                    }
+                }
+            });
+        }
+        
+        Ok(tokens)
     } else {
         // Events without fields are just references - they're defined in types
         Ok(TokenStream::new())
@@ -1484,12 +1536,22 @@ mod tests {
         let result = generate_event(&event).unwrap();
         let result_str = result.to_string();
 
+        // Check for module-level discriminator constant
+        assert!(result_str.contains("TRANSFER_EVENT_EVENT_DISCM"));
+        assert!(result_str.contains("[1u8 , 2u8 , 3u8 , 4u8 , 5u8 , 6u8 , 7u8 , 8u8]"));
+        
+        // Check for data struct
         assert!(result_str.contains("pub struct TransferEvent"));
         assert!(result_str.contains("pub from : Pubkey"));
         assert!(result_str.contains("pub to : Pubkey"));
         assert!(result_str.contains("pub amount : u64"));
-        assert!(result_str.contains("DISCRIMINATOR"));
-        assert!(result_str.contains("try_from_slice_with_discriminator"));
+        
+        // Check for wrapper struct
+        assert!(result_str.contains("pub struct TransferEventEvent"));
+        assert!(result_str.contains("pub fn deserialize"));
+        
+        // Check for custom serde serialization of Pubkey fields
+        assert!(result_str.contains("serialize_pubkey_as_string"));
     }
 
     #[test]
