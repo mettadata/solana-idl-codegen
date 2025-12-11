@@ -133,6 +133,8 @@ pub enum Seed {
 pub enum Program {
     #[serde(rename = "const")]
     Const { value: Vec<u8> },
+    #[serde(rename = "account")]
+    Account { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,9 +179,16 @@ pub struct Repr {
 #[serde(tag = "kind")]
 pub enum TypeDefType {
     #[serde(rename = "struct")]
-    Struct { fields: Vec<Field> },
+    Struct { fields: StructFields },
     #[serde(rename = "enum")]
     Enum { variants: Vec<EnumVariant> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StructFields {
+    Named(Vec<Field>),
+    Tuple(Vec<IdlType>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -559,8 +568,34 @@ mod tests {
         let result: TypeDefType = serde_json::from_str(json).unwrap();
         match result {
             TypeDefType::Struct { fields } => {
-                assert_eq!(fields.len(), 1);
-                assert_eq!(fields[0].name, "value");
+                match fields {
+                    StructFields::Named(fields) => {
+                        assert_eq!(fields.len(), 1);
+                        assert_eq!(fields[0].name, "value");
+                    }
+                    _ => panic!("Expected Named struct fields"),
+                }
+            }
+            _ => panic!("Expected Struct variant"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_tuple_struct_type() {
+        let json = r#"{"kind":"struct","fields":["bool"]}"#;
+        let result: TypeDefType = serde_json::from_str(json).unwrap();
+        match result {
+            TypeDefType::Struct { fields } => {
+                match fields {
+                    StructFields::Tuple(types) => {
+                        assert_eq!(types.len(), 1);
+                        match &types[0] {
+                            IdlType::Simple(s) => assert_eq!(s, "bool"),
+                            _ => panic!("Expected simple type"),
+                        }
+                    }
+                    _ => panic!("Expected Tuple struct fields"),
+                }
             }
             _ => panic!("Expected Struct variant"),
         }

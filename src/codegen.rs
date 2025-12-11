@@ -297,8 +297,11 @@ fn is_large_array(ty: &IdlType) -> bool {
 }
 
 /// Check if a struct has any large arrays
-fn has_large_arrays(fields: &[Field]) -> bool {
-    fields.iter().any(|f| is_large_array(&f.ty))
+fn has_large_arrays_in_struct(fields: &StructFields) -> bool {
+    match fields {
+        StructFields::Named(fields) => fields.iter().any(|f| is_large_array(&f.ty)),
+        StructFields::Tuple(types) => types.iter().any(is_large_array),
+    }
 }
 
 fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
@@ -331,55 +334,91 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
         TypeDefType::Struct { fields } => {
             // Check if this struct has large arrays (> 32 elements)
             // If so, we can't derive serde automatically
-            let has_large_arrays = has_large_arrays(fields);
+            let has_large_arrays = has_large_arrays_in_struct(fields);
             
-            let field_tokens: Vec<_> = fields
-                .iter()
-                .map(|f| {
-                    let field_name = format_ident!("{}", f.name.to_snake_case());
-                    let field_type = map_idl_type(&f.ty);
-                    let field_docs = generate_docs(f.docs.as_ref());
+            match fields {
+                StructFields::Named(fields) => {
+                    let field_tokens: Vec<_> = fields
+                        .iter()
+                        .map(|f| {
+                            let field_name = format_ident!("{}", f.name.to_snake_case());
+                            let field_type = map_idl_type(&f.ty);
+                            let field_docs = generate_docs(f.docs.as_ref());
+                            
+                            quote! {
+                                #field_docs
+                                pub #field_name: #field_type
+                            }
+                        })
+                        .collect();
+
+                    if use_bytemuck {
+                        // For bytemuck types, we need unsafe implementations for Pod and Zeroable
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, Copy, PartialEq)]
+                            pub struct #name {
+                                #(#field_tokens),*
+                            }
+
+                            unsafe impl bytemuck::Pod for #name {}
+                            unsafe impl bytemuck::Zeroable for #name {}
+                        })
+                    } else if has_large_arrays {
+                        // Skip serde for structs with large arrays
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                            pub struct #name {
+                                #(#field_tokens),*
+                            }
+                        })
+                    } else {
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+                            pub struct #name {
+                                #(#field_tokens),*
+                            }
+                        })
+                    }
+                }
+                StructFields::Tuple(types) => {
+                    let field_types: Vec<_> = types.iter().map(map_idl_type).collect();
                     
-                    quote! {
-                        #field_docs
-                        pub #field_name: #field_type
-                    }
-                })
-                .collect();
+                    if use_bytemuck {
+                        // For bytemuck types, we need unsafe implementations for Pod and Zeroable
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, Copy, PartialEq)]
+                            pub struct #name(#(pub #field_types),*);
 
-            if use_bytemuck {
-                // For bytemuck types, we need unsafe implementations for Pod and Zeroable
-                Ok(quote! {
-                    #docs
-                    #repr_attr
-                    #[derive(Debug, Clone, Copy, PartialEq)]
-                    pub struct #name {
-                        #(#field_tokens),*
+                            unsafe impl bytemuck::Pod for #name {}
+                            unsafe impl bytemuck::Zeroable for #name {}
+                        })
+                    } else if has_large_arrays {
+                        // Skip serde for structs with large arrays
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                            pub struct #name(#(pub #field_types),*);
+                        })
+                    } else {
+                        Ok(quote! {
+                            #docs
+                            #repr_attr
+                            #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+                            pub struct #name(#(pub #field_types),*);
+                        })
                     }
-
-                    unsafe impl bytemuck::Pod for #name {}
-                    unsafe impl bytemuck::Zeroable for #name {}
-                })
-            } else if has_large_arrays {
-                // Skip serde for structs with large arrays
-                Ok(quote! {
-                    #docs
-                    #repr_attr
-                    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-                    pub struct #name {
-                        #(#field_tokens),*
-                    }
-                })
-            } else {
-                Ok(quote! {
-                    #docs
-                    #repr_attr
-                    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-                    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-                    pub struct #name {
-                        #(#field_tokens),*
-                    }
-                })
+                }
             }
         }
         TypeDefType::Enum { variants } => {
@@ -1224,7 +1263,7 @@ mod tests {
             name: "MyStruct".to_string(),
             docs: None,
             ty: TypeDefType::Struct {
-                fields: vec![
+                fields: StructFields::Named(vec![
                     Field {
                         name: "field1".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
@@ -1235,7 +1274,7 @@ mod tests {
                         ty: IdlType::Simple("string".to_string()),
                         docs: None,
                     },
-                ],
+                ]),
             },
             serialization: None,
             repr: None,
@@ -1257,11 +1296,11 @@ mod tests {
             name: "MyStruct".to_string(),
             docs: Some(vec!["This is a documented struct".to_string()]),
             ty: TypeDefType::Struct {
-                fields: vec![Field {
+                fields: StructFields::Named(vec![Field {
                     name: "field1".to_string(),
                     ty: IdlType::Simple("u64".to_string()),
                     docs: Some(vec!["Field documentation".to_string()]),
-                }],
+                }]),
             },
             serialization: None,
             repr: None,
@@ -1280,7 +1319,7 @@ mod tests {
             name: "MyBytemuckStruct".to_string(),
             docs: None,
             ty: TypeDefType::Struct {
-                fields: vec![
+                fields: StructFields::Named(vec![
                     Field {
                         name: "field1".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
@@ -1291,7 +1330,7 @@ mod tests {
                         ty: IdlType::Simple("u32".to_string()),
                         docs: None,
                     },
-                ],
+                ]),
             },
             serialization: Some("bytemuck".to_string()),
             repr: Some(Repr {
@@ -1316,11 +1355,11 @@ mod tests {
             name: "PackedStruct".to_string(),
             docs: None,
             ty: TypeDefType::Struct {
-                fields: vec![Field {
+                fields: StructFields::Named(vec![Field {
                     name: "field1".to_string(),
                     ty: IdlType::Simple("u64".to_string()),
                     docs: None,
-                }],
+                }]),
             },
             serialization: Some("bytemuckunsafe".to_string()),
             repr: Some(Repr {
@@ -1333,6 +1372,27 @@ mod tests {
         let result_str = result.to_string();
 
         assert!(result_str.contains("repr") && result_str.contains("C") && result_str.contains("packed"));
+    }
+
+    #[test]
+    fn test_generate_type_def_tuple_struct() {
+        let type_def = TypeDef {
+            name: "OptionBool".to_string(),
+            docs: None,
+            ty: TypeDefType::Struct {
+                fields: StructFields::Tuple(vec![IdlType::Simple("bool".to_string())]),
+            },
+            serialization: None,
+            repr: None,
+        };
+
+        let result = generate_type_def(&type_def).unwrap();
+        let result_str = result.to_string();
+
+        assert!(result_str.contains("pub struct OptionBool"));
+        assert!(result_str.contains("pub bool"));
+        assert!(result_str.contains("BorshSerialize"));
+        assert!(result_str.contains("BorshDeserialize"));
     }
 
     #[test]
@@ -1431,11 +1491,11 @@ mod tests {
             name: "MyStruct".to_string(),
             docs: None,
             ty: TypeDefType::Struct {
-                fields: vec![Field {
+                fields: StructFields::Named(vec![Field {
                     name: "CamelCaseField".to_string(),
                     ty: IdlType::Simple("u64".to_string()),
                     docs: None,
-                }],
+                }]),
             },
             serialization: None,
             repr: None,
@@ -1740,11 +1800,11 @@ mod tests {
             discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
             docs: Some(vec!["User account structure".to_string()]),
             ty: Some(TypeDefType::Struct {
-                fields: vec![Field {
+                fields: StructFields::Named(vec![Field {
                     name: "balance".to_string(),
                     ty: IdlType::Simple("u64".to_string()),
                     docs: None,
-                }],
+                }]),
             }),
         };
 
@@ -1827,11 +1887,11 @@ mod tests {
                 name: "TestStruct".to_string(),
                 docs: None,
                 ty: TypeDefType::Struct {
-                    fields: vec![Field {
+                    fields: StructFields::Named(vec![Field {
                         name: "value".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
                         docs: None,
-                    }],
+                    }]),
                 },
                 serialization: None,
                 repr: None,
@@ -1873,11 +1933,11 @@ mod tests {
                 name: "TestAccount".to_string(),
                 docs: None,
                 ty: TypeDefType::Struct {
-                    fields: vec![Field {
+                    fields: StructFields::Named(vec![Field {
                         name: "data".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
                         docs: None,
-                    }],
+                    }]),
                 },
                 serialization: None,
                 repr: None,
@@ -1919,11 +1979,11 @@ mod tests {
                 name: "BytemuckAccount".to_string(),
                 docs: None,
                 ty: TypeDefType::Struct {
-                    fields: vec![Field {
+                    fields: StructFields::Named(vec![Field {
                         name: "value".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
                         docs: None,
-                    }],
+                    }]),
                 },
                 serialization: Some("bytemuck".to_string()),
                 repr: Some(Repr {
@@ -1986,7 +2046,7 @@ mod tests {
                 name: "TokenAccount".to_string(),
                 docs: Some(vec!["Token account data".to_string()]),
                 ty: TypeDefType::Struct {
-                    fields: vec![
+                    fields: StructFields::Named(vec![
                         Field {
                             name: "mint".to_string(),
                             ty: IdlType::Simple("publicKey".to_string()),
@@ -2002,7 +2062,7 @@ mod tests {
                             ty: IdlType::Simple("u64".to_string()),
                             docs: None,
                         },
-                    ],
+                    ]),
                 },
                 serialization: None,
                 repr: None,
@@ -2468,7 +2528,7 @@ mod tests {
         let type_def = TypeDef {
             name: "EmptyStruct".to_string(),
             docs: None,
-            ty: TypeDefType::Struct { fields: vec![] },
+            ty: TypeDefType::Struct { fields: StructFields::Named(vec![]) },
             serialization: None,
             repr: None,
         };
@@ -2503,7 +2563,7 @@ mod tests {
             name: "TestStruct".to_string(),
             docs: None,
             ty: TypeDefType::Struct {
-                fields: vec![
+                fields: StructFields::Named(vec![
                     Field {
                         name: "camelCase".to_string(),
                         ty: IdlType::Simple("u64".to_string()),
@@ -2519,7 +2579,7 @@ mod tests {
                         ty: IdlType::Simple("u64".to_string()),
                         docs: None,
                     },
-                ],
+                ]),
             },
             serialization: None,
             repr: None,
