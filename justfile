@@ -54,3 +54,23 @@ test-all: generate
     cargo test --test integration_tests -- --nocapture
     echo ""
     echo "✓ All tests passed!"
+
+# Run performance tests
+test-perf: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running performance tests..."
+    cargo test --test performance_tests -- --nocapture
+
+# Run benchmarks
+bench:
+    cargo bench
+
+# Run all tests with timing information
+test-with-timing: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running all tests with timing information..."
+    time cargo test --test integration_tests -- --nocapture
+    echo ""
+    cargo test --test performance_tests -- --nocapture

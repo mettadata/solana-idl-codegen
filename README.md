@@ -151,16 +151,40 @@ just test-integration
 
 # Run all tests (unit + integration)
 just test-all
+
+# Run performance tests
+just test-perf
+
+# Run benchmarks with Criterion
+just bench
+
+# Run tests with detailed timing
+just test-with-timing
 ```
 
 The integration tests verify:
-- ✅ All generated crates compile successfully
+- ✅ All generated crates compile successfully (~61s)
 - ✅ Event wrapper pattern with discriminators
 - ✅ Account discriminators for state parsing
 - ✅ Instruction enum serialization
 - ✅ Error enum with proper codes
 - ✅ Pubkey serde serialization as strings
 - ✅ Proper Cargo.toml dependencies
+
+### Performance
+
+Test execution times:
+- **Unit tests (84)**: 0.01s ⚡
+- **Integration tests (11)**: ~61s (compiling generated crates)
+- **Performance tests (5)**: ~1s
+- **Code generation**: ~400ms for 5 programs
+
+Code generation is very fast:
+- Simple programs: ~42ms
+- Complex programs: ~114ms
+- Average: ~84ms per program
+
+See [PERFORMANCE_ANALYSIS.md](./PERFORMANCE_ANALYSIS.md) for detailed metrics.
 - ✅ Module structure and re-exports
 
 See [TEST_RESULTS.md](TEST_RESULTS.md) for detailed test results and [INTEGRATION_TESTING.md](INTEGRATION_TESTING.md) for how to write additional tests.

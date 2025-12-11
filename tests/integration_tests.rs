@@ -6,6 +6,7 @@
 //! See INTEGRATION_TESTING.md for more information on writing tests.
 
 use std::path::Path;
+use std::time::Instant;
 
 // ============================================================================
 // File Structure Tests
@@ -89,6 +90,7 @@ fn test_generated_crates_compile() {
     let mut tested = 0;
     let mut passed = 0;
     let mut failed = Vec::new();
+    let mut timings = Vec::new();
     
     for crate_name in &crates {
         let crate_path = format!("generated/{}", crate_name);
@@ -99,14 +101,17 @@ fn test_generated_crates_compile() {
         tested += 1;
         
         println!("Checking {}...", crate_name);
+        let start = Instant::now();
         let output = Command::new("cargo")
             .args(&["check", "--manifest-path", &format!("{}/Cargo.toml", crate_path)])
             .output()
             .expect("Failed to run cargo check");
+        let duration = start.elapsed();
         
         if output.status.success() {
             passed += 1;
-            println!("✓ {} compiles successfully", crate_name);
+            println!("✓ {} compiles successfully in {:.2}s", crate_name, duration.as_secs_f64());
+            timings.push((crate_name, duration));
         } else {
             failed.push(crate_name);
             eprintln!("✗ {} failed to compile:", crate_name);
@@ -114,7 +119,15 @@ fn test_generated_crates_compile() {
         }
     }
     
-    println!("\nCompilation test summary: {}/{} crates passed", passed, tested);
+    println!("\n=== Compilation Performance ===");
+    println!("Compilation test summary: {}/{} crates passed", passed, tested);
+    println!("\nIndividual crate compilation times:");
+    for (name, duration) in &timings {
+        println!("  {} - {:.2}s", name, duration.as_secs_f64());
+    }
+    let total_time: std::time::Duration = timings.iter().map(|(_, d)| *d).sum();
+    println!("Total compilation time: {:.2}s", total_time.as_secs_f64());
+    println!("===============================\n");
     
     assert!(tested > 0, "No crates found to test. Run `just generate`.");
     assert!(failed.is_empty(), "Some crates failed to compile: {:?}", failed);

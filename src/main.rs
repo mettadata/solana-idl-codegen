@@ -3,8 +3,7 @@ use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 
-mod codegen;
-mod idl;
+use solana_idl_codegen::{codegen, idl};
 
 #[derive(Parser)]
 #[command(name = "solana-idl-codegen")]
