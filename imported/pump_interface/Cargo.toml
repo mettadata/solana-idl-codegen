@@ -1,0 +1,30 @@
+[package]
+name = "pump_interface"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+
+[dependencies.borsh]
+version = "^1.5"
+
+[dependencies.num-derive]
+version = "0.4.2"
+
+[dependencies.num-traits]
+version = "^0.2"
+
+[dependencies.serde]
+optional = true
+version = "^1.0"
+features = ["derive"]
+
+[dependencies.solana-program]
+version = "^2.2"
+
+[dependencies.thiserror]
+version = "^2.0"
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
