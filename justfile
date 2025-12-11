@@ -1,27 +1,37 @@
+# List of generated crates
+projects := "raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm"
+
+# IDL configurations: module_name:idl_path
+idls := "raydium_amm:idl/raydium-idl/raydium_amm/idl.json raydium_clmm:idl/raydium-idl/raydium_clmm/amm_v3.json raydium_cpmm:idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json pumpfun:idl/pump-public-docs/idl/pump.json pumpfun_amm:idl/pump-public-docs/idl/pump_amm.json"
+
 clean:
     rm -rf generated
     cargo clean
 
 generate: clean
-    cargo run -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
-    cargo run -- -i idl/raydium-idl/raydium_clmm/amm_v3.json -o generated -m raydium_clmm
-    cargo run -- -i idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json -o generated -m raydium_cpmm
-    cargo run -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
-    cargo run -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for idl in {{idls}}; do
+        module="${idl%%:*}"
+        path="${idl#*:}"
+        cargo run -- -i "$path" -o generated -m "$module"
+    done
 
 check: generate
-    cd generated/raydium_amm && cargo check
-    cd generated/raydium_clmm && cargo check
-    cd generated/raydium_cpmm && cargo check
-    cd generated/pumpfun && cargo check
-    cd generated/pumpfun_amm && cargo check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for project in {{projects}}; do
+        echo "Checking $project..."
+        (cd "generated/$project" && cargo check)
+    done
 
 build:
-    cd generated/raydium_amm && cargo build
-    cd generated/raydium_clmm && cargo build
-    cd generated/raydium_cpmm && cargo build
-    cd generated/pumpfun && cargo build
-    cd generated/pumpfun_amm && cargo build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for project in {{projects}}; do
+        echo "Building $project..."
+        (cd "generated/$project" && cargo build)
+    done
 
 test:
-    cargo test 
+    cargo test
