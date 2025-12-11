@@ -137,7 +137,8 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     }
 
     // Generate instruction structs and enums
-    instructions_tokens.extend(generate_instructions(&idl.instructions)?);
+    let has_program_id = idl.get_address().is_some();
+    instructions_tokens.extend(generate_instructions(&idl.instructions, has_program_id)?);
 
     // Generate errors
     if let Some(errors) = &idl.errors {
@@ -152,14 +153,14 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     }
 
     // Format each module with appropriate imports
-    let types_code = format_module(types_tokens, &[])?;  // types don't need to import anything
-    let accounts_code = format_module(accounts_tokens, &["types"])?;  // accounts may reference types
-    let instructions_code = format_module(instructions_tokens, &["types", "accounts"])?;  // instructions may reference both
-    let errors_code = format_module(errors_tokens, &[])?;  // errors are standalone
-    let events_code = format_module(events_tokens, &["types"])?;  // events may reference types
+    let types_code = format_module(types_tokens, &[], "types")?;
+    let accounts_code = format_module(accounts_tokens, &["types"], "accounts")?;
+    let instructions_code = format_module(instructions_tokens, &["types", "accounts"], "instructions")?;
+    let errors_code = format_module(errors_tokens, &[], "errors")?;
+    let events_code = format_module(events_tokens, &["types"], "events")?;
 
     // Generate lib.rs that re-exports all modules
-    let lib_code = generate_lib_module();
+    let lib_code = generate_lib_module(&idl);
 
     Ok(GeneratedCode {
         lib: lib_code,
@@ -171,7 +172,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     })
 }
 
-fn format_module(tokens: TokenStream, imports: &[&str]) -> Result<String> {
+fn format_module(tokens: TokenStream, imports: &[&str], module_type: &str) -> Result<String> {
     if tokens.is_empty() {
         return Ok(String::new());
     }
@@ -196,12 +197,28 @@ fn format_module(tokens: TokenStream, imports: &[&str]) -> Result<String> {
         }
     }
 
+    // Different modules need different imports
+    let common_imports = match module_type {
+        "errors" => {
+            // Errors module only needs program_error imports
+            quote! {}
+        }
+        _ => {
+            // Other modules need borsh, bytemuck, pubkey
+            quote! {
+                use borsh::{BorshDeserialize, BorshSerialize};
+                #[allow(unused_imports)]
+                use bytemuck::{Pod, Zeroable};
+                use solana_program::pubkey::Pubkey;
+                #[allow(unused_imports)]
+                use solana_program::instruction::AccountMeta;
+            }
+        }
+    };
+
     // Format the code with common imports
     let code = quote! {
-        use borsh::{BorshDeserialize, BorshSerialize};
-        #[allow(unused_imports)]
-        use bytemuck::{Pod, Zeroable};
-        use solana_program::pubkey::Pubkey;
+        #common_imports
         
         #import_tokens
 
@@ -228,10 +245,18 @@ fn format_module(tokens: TokenStream, imports: &[&str]) -> Result<String> {
     Ok(prettyplease::unparse(&syntax_tree))
 }
 
-fn generate_lib_module() -> String {
-    r#"//! Generated Solana program bindings
+fn generate_lib_module(idl: &Idl) -> String {
+    let program_id_declaration = if let Some(address) = idl.get_address() {
+        format!("solana_program::declare_id!(\"{}\");\n\n", address)
+    } else {
+        // If no address is provided, use a placeholder comment
+        "// Program ID not specified in IDL\n// solana_program::declare_id!(\"YourProgramIdHere\");\n\n".to_string()
+    };
 
-pub mod types;
+    format!(
+        r#"//! Generated Solana program bindings
+
+{}pub mod types;
 pub mod accounts;
 pub mod instructions;
 pub mod errors;
@@ -243,7 +268,25 @@ pub use accounts::*;
 pub use instructions::*;
 pub use errors::*;
 pub use events::*;
-"#.to_string()
+"#,
+        program_id_declaration
+    )
+}
+
+/// Check if a type is an array with more than 32 elements
+/// (serde only supports arrays up to size 32 by default)
+fn is_large_array(ty: &IdlType) -> bool {
+    match ty {
+        IdlType::Array { array } => match array {
+            ArrayType::Tuple((_, size)) => *size > 32,
+        },
+        _ => false,
+    }
+}
+
+/// Check if a struct has any large arrays
+fn has_large_arrays(fields: &[Field]) -> bool {
+    fields.iter().any(|f| is_large_array(&f.ty))
 }
 
 fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
@@ -274,12 +317,17 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
 
     match &ty.ty {
         TypeDefType::Struct { fields } => {
+            // Check if this struct has large arrays (> 32 elements)
+            // If so, we can't derive serde automatically
+            let has_large_arrays = has_large_arrays(fields);
+            
             let field_tokens: Vec<_> = fields
                 .iter()
                 .map(|f| {
                     let field_name = format_ident!("{}", f.name.to_snake_case());
                     let field_type = map_idl_type(&f.ty);
                     let field_docs = generate_docs(f.docs.as_ref());
+                    
                     quote! {
                         #field_docs
                         pub #field_name: #field_type
@@ -300,11 +348,22 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                     unsafe impl bytemuck::Pod for #name {}
                     unsafe impl bytemuck::Zeroable for #name {}
                 })
+            } else if has_large_arrays {
+                // Skip serde for structs with large arrays
+                Ok(quote! {
+                    #docs
+                    #repr_attr
+                    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                    pub struct #name {
+                        #(#field_tokens),*
+                    }
+                })
             } else {
                 Ok(quote! {
                     #docs
                     #repr_attr
                     #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
                     pub struct #name {
                         #(#field_tokens),*
                     }
@@ -355,6 +414,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                     #docs
                     #repr_attr
                     #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
                     pub enum #name {
                         #(#variant_tokens),*
                     }
@@ -417,19 +477,123 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
     }
 }
 
-fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
+fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> Result<TokenStream> {
     let mut tokens = TokenStream::new();
+
+    // Generate module-level discriminator constants and IxData wrapper structs for each instruction
+    for (idx, ix) in instructions.iter().enumerate() {
+        let ix_name_snake = ix.name.to_snake_case();
+        let ix_name_pascal = ix.name.to_pascal_case();
+        let discm_const_name = format_ident!("{}_IX_DISCM", ix_name_snake.to_uppercase());
+        let ix_data_struct = format_ident!("{}IxData", ix_name_pascal);
+        
+        // Get discriminator bytes
+        let discriminator_bytes: Vec<u8> = if let Some(disc) = &ix.discriminator {
+            disc.clone()
+        } else {
+            // Use index as discriminator if not provided (old format)
+            (idx as u64).to_le_bytes().to_vec()
+        };
+        
+        let disc_bytes = discriminator_bytes.iter().map(|b| quote! { #b });
+        
+        // Generate module-level discriminator constant
+        tokens.extend(quote! {
+            pub const #discm_const_name: [u8; 8] = [#(#disc_bytes),*];
+        });
+        
+        // Generate IxData wrapper struct
+        if ix.args.is_empty() {
+            // No-args instruction
+            tokens.extend(quote! {
+                #[derive(Clone, Debug, PartialEq)]
+                pub struct #ix_data_struct;
+                
+                impl #ix_data_struct {
+                    pub fn deserialize(buf: &[u8]) -> std::io::Result<Self> {
+                        use std::io::Read;
+                        let mut reader = buf;
+                        let mut maybe_discm = [0u8; 8];
+                        reader.read_exact(&mut maybe_discm)?;
+                        if maybe_discm != #discm_const_name {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "discm does not match. Expected: {:?}. Received: {:?}",
+                                    #discm_const_name, maybe_discm
+                                ),
+                            ));
+                        }
+                        Ok(Self)
+                    }
+                    
+                    pub fn serialize<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+                        writer.write_all(&#discm_const_name)
+                    }
+                    
+                    pub fn try_to_vec(&self) -> std::io::Result<Vec<u8>> {
+                        let mut data = Vec::new();
+                        self.serialize(&mut data)?;
+                        Ok(data)
+                    }
+                }
+            });
+        } else {
+            // Instruction with args
+            let args_struct = format_ident!("{}IxArgs", ix_name_pascal);
+            
+            tokens.extend(quote! {
+                #[derive(Clone, Debug, PartialEq)]
+                pub struct #ix_data_struct(pub #args_struct);
+                
+                impl From<#args_struct> for #ix_data_struct {
+                    fn from(args: #args_struct) -> Self {
+                        Self(args)
+                    }
+                }
+                
+                impl #ix_data_struct {
+                    pub fn deserialize(buf: &[u8]) -> std::io::Result<Self> {
+                        use std::io::Read;
+                        let mut reader = buf;
+                        let mut maybe_discm = [0u8; 8];
+                        reader.read_exact(&mut maybe_discm)?;
+                        if maybe_discm != #discm_const_name {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "discm does not match. Expected: {:?}. Received: {:?}",
+                                    #discm_const_name, maybe_discm
+                                ),
+                            ));
+                        }
+                        Ok(Self(#args_struct::deserialize(&mut reader)?))
+                    }
+                    
+                    pub fn serialize<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+                        writer.write_all(&#discm_const_name)?;
+                        self.0.serialize(&mut writer)
+                    }
+                    
+                    pub fn try_to_vec(&self) -> std::io::Result<Vec<u8>> {
+                        let mut data = Vec::new();
+                        self.serialize(&mut data)?;
+                        Ok(data)
+                    }
+                }
+            });
+        }
+    }
 
     // Generate instruction enum
     let instruction_variants: Vec<_> = instructions
         .iter()
-        .enumerate()
-        .map(|(_idx, ix)| {
+        .map(|ix| {
             let variant_name = format_ident!("{}", ix.name.to_pascal_case());
             if ix.args.is_empty() {
                 quote! { #variant_name }
             } else {
-                let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+                let args_struct = format_ident!("{}IxArgs", ix.name.to_pascal_case());
                 quote! { #variant_name(#args_struct) }
             }
         })
@@ -438,30 +602,21 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
     // Generate discriminator match arms for serialization
     let serialize_arms: Vec<_> = instructions
         .iter()
-        .enumerate()
-        .map(|(idx, ix)| {
+        .map(|ix| {
             let variant_name = format_ident!("{}", ix.name.to_pascal_case());
-            let discriminator = if let Some(disc) = &ix.discriminator {
-                let disc_bytes = disc.iter().map(|b| quote! { #b });
-                quote! { [#(#disc_bytes),*] }
-            } else {
-                // Use index as discriminator if not provided (old format)
-                let idx_bytes = (idx as u64).to_le_bytes();
-                let bytes = idx_bytes.iter().map(|b| quote! { #b });
-                quote! { [#(#bytes),*] }
-            };
+            let discm_const_name = format_ident!("{}_IX_DISCM", ix.name.to_snake_case().to_uppercase());
             
             if ix.args.is_empty() {
                 quote! {
                     Self::#variant_name => {
-                        writer.write_all(&#discriminator)?;
+                        writer.write_all(&#discm_const_name)?;
                         Ok(())
                     }
                 }
             } else {
                 quote! {
                     Self::#variant_name(args) => {
-                        writer.write_all(&#discriminator)?;
+                        writer.write_all(&#discm_const_name)?;
                         args.serialize(writer)
                     }
                 }
@@ -478,7 +633,6 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
             let discriminator_bytes = if let Some(disc) = &ix.discriminator {
                 disc.clone()
             } else {
-                // Use index as discriminator if not provided (old format)
                 (idx as u64).to_le_bytes().to_vec()
             };
             
@@ -489,7 +643,7 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
                     [#(#disc_pattern),*] => Ok(Self::#variant_name)
                 }
             } else {
-                let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+                let args_struct = format_ident!("{}IxArgs", ix.name.to_pascal_case());
                 quote! {
                     [#(#disc_pattern),*] => {
                         let args = #args_struct::deserialize(&mut buf)?;
@@ -538,7 +692,7 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
     // Generate args structs for each instruction
     for ix in instructions {
         if !ix.args.is_empty() {
-            let args_struct = format_ident!("{}Args", ix.name.to_pascal_case());
+            let args_struct = format_ident!("{}IxArgs", ix.name.to_pascal_case());
             let field_tokens: Vec<_> = ix
                 .args
                 .iter()
@@ -553,14 +707,15 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
 
             tokens.extend(quote! {
                 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+                #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
                 pub struct #args_struct {
                     #(#field_tokens),*
                 }
             });
         }
 
-        // Generate accounts struct for each instruction
-        let accounts_struct = format_ident!("{}Accounts", ix.name.to_pascal_case());
+        // Generate Keys struct for each instruction (for building instructions)
+        let keys_struct = format_ident!("{}Keys", ix.name.to_pascal_case());
         let account_fields: Vec<_> = ix
             .accounts
             .iter()
@@ -574,12 +729,111 @@ fn generate_instructions(instructions: &[Instruction]) -> Result<TokenStream> {
             })
             .collect();
 
+        // Generate const for accounts length
+        let accounts_len_const = format_ident!("{}_IX_ACCOUNTS_LEN", ix.name.to_snake_case().to_uppercase());
+        let accounts_len = ix.accounts.len();
+
         tokens.extend(quote! {
+            pub const #accounts_len_const: usize = #accounts_len;
+            
             #[derive(Debug, Clone, PartialEq)]
-            pub struct #accounts_struct {
+            pub struct #keys_struct {
                 #(#account_fields),*
             }
         });
+
+        // Generate From<Keys> for [AccountMeta; N] conversion
+        let account_metas: Vec<_> = ix
+            .accounts
+            .iter()
+            .map(|acc| {
+                let field_name = format_ident!("{}", acc.name.to_snake_case());
+                let is_signer = acc.signer;
+                let is_writable = acc.writable;
+                quote! {
+                    AccountMeta {
+                        pubkey: keys.#field_name,
+                        is_signer: #is_signer,
+                        is_writable: #is_writable,
+                    }
+                }
+            })
+            .collect();
+
+        if !ix.accounts.is_empty() {
+            tokens.extend(quote! {
+                impl From<#keys_struct> for [AccountMeta; #accounts_len_const] {
+                    fn from(keys: #keys_struct) -> Self {
+                        [
+                            #(#account_metas),*
+                        ]
+                    }
+                }
+            });
+        }
+
+        // Generate instruction builder functions
+        let ix_name_snake = ix.name.to_snake_case();
+        let ix_fn = format_ident!("{}_ix", ix_name_snake);
+        let ix_with_program_id_fn = format_ident!("{}_ix_with_program_id", ix_name_snake);
+        let ix_data_struct = format_ident!("{}IxData", ix.name.to_pascal_case());
+
+        if ix.args.is_empty() {
+            // No-args instruction builder
+            tokens.extend(quote! {
+                pub fn #ix_with_program_id_fn(
+                    program_id: Pubkey,
+                    keys: #keys_struct,
+                ) -> std::io::Result<solana_program::instruction::Instruction> {
+                    let metas: [AccountMeta; #accounts_len_const] = keys.into();
+                    Ok(solana_program::instruction::Instruction {
+                        program_id,
+                        accounts: Vec::from(metas),
+                        data: #ix_data_struct.try_to_vec()?,
+                    })
+                }
+            });
+            
+            // Only generate the version without program_id if we have a program ID
+            if has_program_id {
+                tokens.extend(quote! {
+                    pub fn #ix_fn(keys: #keys_struct) -> std::io::Result<solana_program::instruction::Instruction> {
+                        #ix_with_program_id_fn(crate::ID, keys)
+                    }
+                });
+            }
+        } else {
+            // Instruction with args
+            let args_struct = format_ident!("{}IxArgs", ix.name.to_pascal_case());
+            
+            tokens.extend(quote! {
+                pub fn #ix_with_program_id_fn(
+                    program_id: Pubkey,
+                    keys: #keys_struct,
+                    args: #args_struct,
+                ) -> std::io::Result<solana_program::instruction::Instruction> {
+                    let metas: [AccountMeta; #accounts_len_const] = keys.into();
+                    let data: #ix_data_struct = args.into();
+                    Ok(solana_program::instruction::Instruction {
+                        program_id,
+                        accounts: Vec::from(metas),
+                        data: data.try_to_vec()?,
+                    })
+                }
+            });
+            
+            // Only generate the version without program_id if we have a program ID
+            if has_program_id {
+                tokens.extend(quote! {
+                    pub fn #ix_fn(
+                        keys: #keys_struct,
+                        args: #args_struct,
+                    ) -> std::io::Result<solana_program::instruction::Instruction> {
+                        #ix_with_program_id_fn(crate::ID, keys, args)
+                    }
+                });
+            }
+        }
     }
 
     Ok(tokens)
@@ -591,18 +845,28 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
         .map(|e| {
             let variant_name = format_ident!("{}", e.name.to_pascal_case());
             let msg = e.msg.as_deref().unwrap_or(&e.name);
-            let msg_doc = format!("Error: {}", msg);
+            let code = e.code;
             quote! {
-                #[doc = #msg_doc]
-                #variant_name
+                #[error(#msg)]
+                #variant_name = #code
             }
         })
         .collect();
 
     Ok(quote! {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum ProgramError {
+        use solana_program::program_error::ProgramError;
+        use thiserror::Error;
+        
+        #[derive(Clone, Copy, Debug, Eq, Error, num_derive::FromPrimitive, PartialEq)]
+        #[repr(u32)]
+        pub enum ErrorCode {
             #(#error_variants),*
+        }
+        
+        impl From<ErrorCode> for ProgramError {
+            fn from(e: ErrorCode) -> Self {
+                ProgramError::Custom(e as u32)
+            }
         }
     })
 }
@@ -654,6 +918,7 @@ fn generate_event(event: &Event) -> Result<TokenStream> {
         Ok(quote! {
             #[doc = #docs]
             #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+            #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
             pub struct #name {
                 #(#field_tokens),*
             }
@@ -1152,11 +1417,15 @@ mod tests {
         let result = generate_errors(&errors).unwrap();
         let result_str = result.to_string();
 
-        assert!(result_str.contains("pub enum ProgramError"));
+        assert!(result_str.contains("pub enum ErrorCode"));
         assert!(result_str.contains("InvalidAmount"));
         assert!(result_str.contains("Unauthorized"));
         assert!(result_str.contains("The amount is invalid"));
         assert!(result_str.contains("User is not authorized"));
+        assert!(result_str.contains("= 6000"));
+        assert!(result_str.contains("= 6001"));
+        assert!(result_str.contains("thiserror :: Error"));
+        assert!(result_str.contains("impl From < ErrorCode > for ProgramError"));
     }
 
     #[test]
@@ -1172,6 +1441,7 @@ mod tests {
 
         // Should use name as message when msg is None
         assert!(result_str.contains("ErrorWithoutMessage"));
+        assert!(result_str.contains("= 6000"));
     }
 
     #[test]
@@ -1180,7 +1450,7 @@ mod tests {
         let result = generate_errors(&errors).unwrap();
         let result_str = result.to_string();
 
-        assert!(result_str.contains("pub enum ProgramError"));
+        assert!(result_str.contains("pub enum ErrorCode"));
     }
 
     // ============================================================================
@@ -1282,13 +1552,16 @@ mod tests {
             },
         ];
 
-        let result = generate_instructions(&instructions).unwrap();
+        let result = generate_instructions(&instructions, true).unwrap();
         let result_str = result.to_string();
 
         assert!(result_str.contains("pub enum Instruction"));
         assert!(result_str.contains("Initialize"));
         assert!(result_str.contains("Transfer"));
-        assert!(result_str.contains("TransferArgs"));
+        assert!(result_str.contains("TransferIxArgs"));
+        assert!(result_str.contains("TransferIxData"));
+        assert!(result_str.contains("INITIALIZE_IX_DISCM"));
+        assert!(result_str.contains("TRANSFER_IX_DISCM"));
         assert!(result_str.contains("pub amount : u64"));
         assert!(result_str.contains("serialize"));
         assert!(result_str.contains("try_from_slice"));
@@ -1323,10 +1596,10 @@ mod tests {
             args: vec![],
         }];
 
-        let result = generate_instructions(&instructions).unwrap();
+        let result = generate_instructions(&instructions, true).unwrap();
         let result_str = result.to_string();
 
-        assert!(result_str.contains("SwapAccounts"));
+        assert!(result_str.contains("SwapKeys"));
         assert!(result_str.contains("pub user : Pubkey"));
         assert!(result_str.contains("pub pool : Pubkey"));
         assert!(result_str.contains("The user account"));
@@ -1357,10 +1630,11 @@ mod tests {
             ],
         }];
 
-        let result = generate_instructions(&instructions).unwrap();
+        let result = generate_instructions(&instructions, true).unwrap();
         let result_str = result.to_string();
 
-        assert!(result_str.contains("ComplexInstructionArgs"));
+        assert!(result_str.contains("ComplexInstructionIxArgs"));
+        assert!(result_str.contains("ComplexInstructionIxData"));
         assert!(result_str.contains("pub amount : u64"));
         assert!(result_str.contains("pub recipient : Pubkey"));
         assert!(result_str.contains("pub memo : Option < String >"));
@@ -1385,7 +1659,7 @@ mod tests {
             },
         ];
 
-        let result = generate_instructions(&instructions).unwrap();
+        let result = generate_instructions(&instructions, true).unwrap();
         let result_str = result.to_string();
 
         // Should generate with index-based discriminators
@@ -1708,11 +1982,419 @@ mod tests {
         assert!(code.types.contains("pub struct TokenAccount"));
         assert!(code.instructions.contains("pub enum Instruction"));
         assert!(code.instructions.contains("Transfer"));
-        assert!(code.instructions.contains("TransferArgs"));
+        assert!(code.instructions.contains("TransferIxArgs"));
+        assert!(code.instructions.contains("TransferIxData"));
         assert!(code.instructions.contains("pub amount: u64"));
-        assert!(code.errors.contains("pub enum ProgramError"));
+        assert!(code.errors.contains("pub enum ErrorCode"));
         assert!(code.errors.contains("InsufficientFunds"));
         assert!(code.events.contains("pub struct TransferEvent"));
+    }
+
+    // ============================================================================
+    // Program ID Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_lib_with_program_id() {
+        let idl = Idl {
+            address: Some("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P".to_string()),
+            version: Some("0.1.0".to_string()),
+            name: Some("test_program".to_string()),
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let lib_code = generate_lib_module(&idl);
+        assert!(lib_code.contains("solana_program::declare_id!"));
+        assert!(lib_code.contains("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"));
+    }
+
+    #[test]
+    fn test_generate_lib_without_program_id() {
+        let idl = Idl {
+            address: None,
+            version: Some("0.1.0".to_string()),
+            name: Some("test_program".to_string()),
+            metadata: None,
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let lib_code = generate_lib_module(&idl);
+        assert!(lib_code.contains("Program ID not specified"));
+        assert!(lib_code.contains("YourProgramIdHere"));
+    }
+
+    #[test]
+    fn test_generated_code_includes_program_id() {
+        let idl = Idl {
+            address: Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()),
+            version: Some("1.0.0".to_string()),
+            name: Some("token_program".to_string()),
+            metadata: None,
+            instructions: vec![Instruction {
+                name: "noop".to_string(),
+                docs: None,
+                discriminator: Some(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+                accounts: vec![],
+                args: vec![],
+            }],
+            accounts: None,
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate(&idl, "token_program");
+        assert!(result.is_ok());
+        let code = result.unwrap();
+        assert!(code.lib.contains("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"));
+    }
+
+    // ============================================================================
+    // Instruction IxData Pattern Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_ixdata_wrapper_no_args() {
+        let instructions = vec![Instruction {
+            name: "initialize".to_string(),
+            docs: None,
+            discriminator: Some(vec![175, 175, 109, 31, 13, 152, 155, 237]),
+            accounts: vec![],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for discriminator constant
+        assert!(result_str.contains("INITIALIZE_IX_DISCM"));
+        assert!(result_str.contains("175"));
+        assert!(result_str.contains("237"));
+        
+        // Check for IxData struct
+        assert!(result_str.contains("InitializeIxData"));
+        assert!(result_str.contains("deserialize"));
+        assert!(result_str.contains("serialize"));
+        assert!(result_str.contains("try_to_vec"));
+    }
+
+    #[test]
+    fn test_generate_ixdata_wrapper_with_args() {
+        let instructions = vec![Instruction {
+            name: "transfer".to_string(),
+            docs: None,
+            discriminator: Some(vec![163, 52, 200, 231, 140, 3, 69, 186]),
+            accounts: vec![],
+            args: vec![Arg {
+                name: "amount".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+            }],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for discriminator constant
+        assert!(result_str.contains("TRANSFER_IX_DISCM"));
+        
+        // Check for IxData wrapper struct
+        assert!(result_str.contains("TransferIxData"));
+        assert!(result_str.contains("TransferIxArgs"));
+        
+        // Check for From implementation
+        assert!(result_str.contains("From"));
+        
+        // Check for IxArgs struct
+        assert!(result_str.contains("pub amount"));
+        assert!(result_str.contains("u64"));
+    }
+
+    #[test]
+    fn test_ixdata_discriminator_in_serialization() {
+        let instructions = vec![Instruction {
+            name: "buy".to_string(),
+            docs: None,
+            discriminator: Some(vec![102, 6, 61, 18, 1, 218, 235, 234]),
+            accounts: vec![],
+            args: vec![Arg {
+                name: "amount".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+            }],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check that serialize method uses the discriminator constant
+        assert!(result_str.contains("BUY_IX_DISCM"));
+        assert!(result_str.contains("write_all"));
+    }
+
+    // ============================================================================
+    // AccountMeta Generation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_keys_struct() {
+        let instructions = vec![Instruction {
+            name: "transfer".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "from".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "to".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for Keys struct
+        assert!(result_str.contains("TransferKeys"));
+        assert!(result_str.contains("pub from : Pubkey"));
+        assert!(result_str.contains("pub to : Pubkey"));
+        
+        // Check for accounts length constant
+        assert!(result_str.contains("TRANSFER_IX_ACCOUNTS_LEN"));
+        assert!(result_str.contains(": usize = 2"));
+    }
+
+    #[test]
+    fn test_generate_account_meta_conversion() {
+        let instructions = vec![Instruction {
+            name: "initialize".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "admin".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: false,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "config".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "system_program".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: false,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for From implementation
+        assert!(result_str.contains("impl From < InitializeKeys > for [AccountMeta"));
+        
+        // Check that is_signer and is_writable are set correctly
+        assert!(result_str.contains("is_signer : true"));
+        assert!(result_str.contains("is_signer : false"));
+        assert!(result_str.contains("is_writable : true"));
+        assert!(result_str.contains("is_writable : false"));
+    }
+
+    #[test]
+    fn test_account_meta_flags_correctness() {
+        let instructions = vec![Instruction {
+            name: "test".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "signer_writable".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "signer_readonly".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: false,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "nonsigner_writable".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+                AccountArg {
+                    name: "nonsigner_readonly".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: false,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Verify all four combinations are represented
+        assert!(result_str.contains("signer_writable"));
+        assert!(result_str.contains("signer_readonly"));
+        assert!(result_str.contains("nonsigner_writable"));
+        assert!(result_str.contains("nonsigner_readonly"));
+    }
+
+    // ============================================================================
+    // Instruction Builder Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_instruction_builder_no_args() {
+        let instructions = vec![Instruction {
+            name: "initialize".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "config".to_string(),
+                    docs: None,
+                    signer: false,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for builder functions
+        assert!(result_str.contains("pub fn initialize_ix"));
+        assert!(result_str.contains("pub fn initialize_ix_with_program_id"));
+        assert!(result_str.contains("keys : InitializeKeys"));
+        assert!(result_str.contains("crate :: ID"));
+    }
+
+    #[test]
+    fn test_generate_instruction_builder_with_args() {
+        let instructions = vec![Instruction {
+            name: "transfer".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "from".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: true,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![Arg {
+                name: "amount".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+            }],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check for builder functions with args
+        assert!(result_str.contains("pub fn transfer_ix"));
+        assert!(result_str.contains("pub fn transfer_ix_with_program_id"));
+        assert!(result_str.contains("keys : TransferKeys"));
+        assert!(result_str.contains("args : TransferIxArgs"));
+    }
+
+    #[test]
+    fn test_instruction_builder_returns_instruction() {
+        let instructions = vec![Instruction {
+            name: "swap".to_string(),
+            docs: None,
+            discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+            accounts: vec![
+                AccountArg {
+                    name: "user".to_string(),
+                    docs: None,
+                    signer: true,
+                    writable: false,
+                    pda: None,
+                    address: None,
+                    optional: None,
+                },
+            ],
+            args: vec![Arg {
+                name: "amount".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+            }],
+        }];
+
+        let result = generate_instructions(&instructions, true).unwrap();
+        let result_str = result.to_string();
+
+        // Check that builder returns Instruction
+        assert!(result_str.contains("-> std :: io :: Result"));
+        assert!(result_str.contains("solana_program :: instruction :: Instruction"));
+        assert!(result_str.contains("program_id"));
+        assert!(result_str.contains("accounts"));
+        assert!(result_str.contains("data"));
     }
 
     // ============================================================================
@@ -1802,7 +2484,7 @@ mod tests {
             }],
         }];
 
-        let result = generate_instructions(&instructions).unwrap();
+        let result = generate_instructions(&instructions, true).unwrap();
         let result_str = result.to_string();
 
         // Check that deserialization uses &mut buf

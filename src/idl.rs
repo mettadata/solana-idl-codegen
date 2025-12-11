@@ -51,6 +51,20 @@ impl Idl {
             "0.0.0"
         }
     }
+
+    pub fn get_address(&self) -> Option<&str> {
+        // Check top-level address first
+        if let Some(ref address) = self.address {
+            return Some(address);
+        }
+        // Then check metadata.address
+        if let Some(ref metadata) = self.metadata {
+            if let Some(ref address) = metadata.address {
+                return Some(address);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

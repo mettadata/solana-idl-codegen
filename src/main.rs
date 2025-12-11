@@ -157,9 +157,21 @@ description = "Rust bindings for {} Solana program"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-borsh = {{ version = "1.5", features = ["derive"] }}
-bytemuck = {{ version = "1.14", features = ["derive"] }}
-solana-program = "1.18"
+borsh = {{ version = "^1.5", features = ["derive"] }}
+bytemuck = {{ version = "^1.14", features = ["derive"] }}
+solana-program = "^2.2"
+thiserror = "^2.0"
+num-derive = "^0.4"
+num-traits = "^0.2"
+
+[dependencies.serde]
+version = "^1.0"
+features = ["derive"]
+optional = true
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
 
 [lib]
 crate-type = ["lib"]
