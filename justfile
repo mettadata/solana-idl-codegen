@@ -18,6 +18,31 @@ fmt:
 clippy:
     cargo clippy --all --all-targets --all-features -- --deny warnings
 
+# Run cargo fmt on all generated crates
+fmt-generated:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for project in {{projects}}; do
+        if [ -d "generated/$project" ]; then
+            echo "Formatting $project..."
+            (cd "generated/$project" && cargo fmt --all)
+        fi
+    done
+
+# Run cargo clippy on all generated crates
+clippy-generated:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for project in {{projects}}; do
+        if [ -d "generated/$project" ]; then
+            echo "Checking $project with clippy..."
+            (cd "generated/$project" && cargo clippy --all --all-targets --all-features -- --deny warnings)
+        fi
+    done
+
+# Run both fmt and clippy on all generated crates
+lint-generated: fmt-generated clippy-generated
+
 generate: clean
     #!/usr/bin/env bash
     set -euo pipefail
