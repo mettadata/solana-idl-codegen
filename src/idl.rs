@@ -617,8 +617,8 @@ mod tests {
         let json = r#"{"name":"user","isSigner":true,"isMut":false}"#;
         let result: AccountArg = serde_json::from_str(json).unwrap();
         assert_eq!(result.name, "user");
-        assert_eq!(result.signer, true);
-        assert_eq!(result.writable, false);
+        assert!(result.signer);
+        assert!(!result.writable);
     }
 
     #[test]
@@ -627,8 +627,8 @@ mod tests {
         let json = r#"{"name":"user","signer":true,"writable":true}"#;
         let result: AccountArg = serde_json::from_str(json).unwrap();
         assert_eq!(result.name, "user");
-        assert_eq!(result.signer, true);
-        assert_eq!(result.writable, true);
+        assert!(result.signer);
+        assert!(result.writable);
     }
 
     #[test]

@@ -68,7 +68,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                     type_tokens.extend(quote! {
                         impl #name {
                             pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
-                            
+
                             pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
                                 if data.len() < 8 {
                                     return Err(std::io::Error::new(
@@ -89,7 +89,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                                         format!("Bytemuck conversion error: {:?}", e),
                                     ))
                             }
-                            
+
                             pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                                 writer.write_all(&Self::DISCRIMINATOR)?;
                                 writer.write_all(bytemuck::bytes_of(self))
@@ -101,7 +101,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                     type_tokens.extend(quote! {
                         impl #name {
                             pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
-                            
+
                             pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
                                 if data.len() < 8 {
                                     return Err(std::io::Error::new(
@@ -117,7 +117,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                                 }
                                 borsh::BorshDeserialize::try_from_slice(&data[8..])
                             }
-                            
+
                             pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                                 writer.write_all(&Self::DISCRIMINATOR)?;
                                 borsh::BorshSerialize::serialize(self, writer)
@@ -161,7 +161,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     let events_code = format_module(events_tokens, &["types"], "events")?;
 
     // Generate lib.rs that re-exports all modules
-    let lib_code = generate_lib_module(&idl);
+    let lib_code = generate_lib_module(idl);
 
     Ok(GeneratedCode {
         lib: lib_code,
@@ -492,7 +492,7 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
             tokens.extend(quote! {
                 impl #name {
                     pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
-                    
+
                     pub fn try_from_slice_with_discriminator(data: &[u8]) -> std::io::Result<Self> {
                         if data.len() < 8 {
                             return Err(std::io::Error::new(
@@ -508,7 +508,7 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
                         }
                         borsh::BorshDeserialize::try_from_slice(&data[8..])
                     }
-                    
+
                     pub fn serialize_with_discriminator<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                         writer.write_all(&Self::DISCRIMINATOR)?;
                         borsh::BorshSerialize::serialize(self, writer)
@@ -559,7 +559,7 @@ fn generate_instructions(
             tokens.extend(quote! {
                 #[derive(Clone, Debug, PartialEq)]
                 pub struct #ix_data_struct;
-                
+
                 impl #ix_data_struct {
                     pub fn deserialize(buf: &[u8]) -> std::io::Result<Self> {
                         use std::io::Read;
@@ -577,11 +577,11 @@ fn generate_instructions(
                         }
                         Ok(Self)
                     }
-                    
+
                     pub fn serialize<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
                         writer.write_all(&#discm_const_name)
                     }
-                    
+
                     pub fn try_to_vec(&self) -> std::io::Result<Vec<u8>> {
                         let mut data = Vec::new();
                         self.serialize(&mut data)?;
@@ -596,13 +596,13 @@ fn generate_instructions(
             tokens.extend(quote! {
                 #[derive(Clone, Debug, PartialEq)]
                 pub struct #ix_data_struct(pub #args_struct);
-                
+
                 impl From<#args_struct> for #ix_data_struct {
                     fn from(args: #args_struct) -> Self {
                         Self(args)
                     }
                 }
-                
+
                 impl #ix_data_struct {
                     pub fn deserialize(buf: &[u8]) -> std::io::Result<Self> {
                         use std::io::Read;
@@ -620,12 +620,12 @@ fn generate_instructions(
                         }
                         Ok(Self(#args_struct::deserialize(&mut reader)?))
                     }
-                    
+
                     pub fn serialize<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
                         writer.write_all(&#discm_const_name)?;
                         self.0.serialize(&mut writer)
                     }
-                    
+
                     pub fn try_to_vec(&self) -> std::io::Result<Vec<u8>> {
                         let mut data = Vec::new();
                         self.serialize(&mut data)?;
@@ -940,7 +940,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
             .map(|f| {
                 let field_name = format_ident!("{}", f.name.to_snake_case());
                 let field_type = map_idl_type(&f.ty);
-                
+
                 // Add custom serde attribute for Pubkey fields
                 let serde_attr = if is_pubkey_type(&f.ty) {
                     quote! {
@@ -949,7 +949,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
                 } else {
                     quote! {}
                 };
-                
+
                 quote! {
                     #serde_attr
                     pub #field_name: #field_type
@@ -967,7 +967,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
                     .map(|f| {
                         let field_name = format_ident!("{}", f.name.to_snake_case());
                         let field_type = map_idl_type(&f.ty);
-                        
+
                         // Add custom serde attribute for Pubkey fields
                         let serde_attr = if is_pubkey_type(&f.ty) {
                             quote! {
@@ -976,7 +976,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
                         } else {
                             quote! {}
                         };
-                        
+
                         quote! {
                             #serde_attr
                             pub #field_name: #field_type

@@ -15,7 +15,7 @@ fn load_test_idl(name: &str, path: &str) -> Idl {
 fn bench_idl_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("idl_parsing");
 
-    let test_cases = vec![
+    let test_cases = [
         ("pumpfun", "idl/pump-public-docs/idl/pump.json"),
         ("pumpfun_amm", "idl/pump-public-docs/idl/pump_amm.json"),
         ("raydium_amm", "idl/raydium-idl/raydium_amm/idl.json"),
@@ -48,7 +48,7 @@ fn bench_code_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("code_generation");
     group.sample_size(10); // Reduce samples since code generation is expensive
 
-    let test_cases = vec![
+    let test_cases = [
         ("pumpfun", "idl/pump-public-docs/idl/pump.json"),
         ("pumpfun_amm", "idl/pump-public-docs/idl/pump_amm.json"),
         ("raydium_amm", "idl/raydium-idl/raydium_amm/idl.json"),

@@ -127,7 +127,7 @@ fn test_generated_crates_compile() {
         println!("Checking {}...", crate_name);
         let start = Instant::now();
         let output = Command::new("cargo")
-            .args(&[
+            .args([
                 "check",
                 "--manifest-path",
                 &format!("{}/Cargo.toml", crate_path),

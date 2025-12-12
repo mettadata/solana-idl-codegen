@@ -393,6 +393,7 @@ fn test_partial_eq_trait_implementation() {
 */
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn test_placeholder() {
     // This is a placeholder test so that the test suite runs even without generated code
     // To run the full integration tests, run `just generate` first, then uncomment the tests above
