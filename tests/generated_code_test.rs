@@ -29,7 +29,7 @@ mod raydium_cpmm {
 fn test_raydium_cpmm_types() {
     use raydium_cpmm::*;
     use borsh::BorshSerialize;
-    
+
     // Test that we can instantiate basic types
     let config = AmmConfig {
         bump: 1,
@@ -43,7 +43,7 @@ fn test_raydium_cpmm_types() {
         fund_owner: solana_program::pubkey::Pubkey::new_unique(),
         padding: [0; 16],
     };
-    
+
     // Test serialization/deserialization with Borsh
     let mut serialized = Vec::new();
     config.serialize(&mut serialized).expect("Should serialize");
@@ -55,19 +55,19 @@ fn test_raydium_cpmm_types() {
 fn test_raydium_cpmm_bytemuck_types() {
     use raydium_cpmm::*;
     use bytemuck::Zeroable;
-    
+
     // Test bytemuck types
     let observation = Observation {
         block_timestamp: 12345,
         cumulative_token_0_price_x32: 100,
         cumulative_token_1_price_x32: 200,
     };
-    
+
     // Test that we can use bytemuck functions
     let _zeroed: Observation = Observation::zeroed();
     let bytes = bytemuck::bytes_of(&observation);
     let from_bytes: &Observation = bytemuck::from_bytes(bytes);
-    
+
     // Test that a bytemuck type can be read (using copy to avoid packed field reference)
     let timestamp = { observation.block_timestamp };
     let from_timestamp = { from_bytes.block_timestamp };
@@ -78,7 +78,7 @@ fn test_raydium_cpmm_bytemuck_types() {
 #[test]
 fn test_raydium_cpmm_pool_state() {
     use raydium_cpmm::*;
-    
+
     // Test creating and working with PoolState
     let pool = PoolState {
         auth_bump: 1,
@@ -104,12 +104,12 @@ fn test_raydium_cpmm_pool_state() {
         token_1_program: solana_program::pubkey::Pubkey::new_unique(),
         observation_key: solana_program::pubkey::Pubkey::new_unique(),
     };
-    
+
     // Test serialization
     let mut buffer = Vec::new();
     use borsh::BorshSerialize;
     pool.serialize(&mut buffer).expect("Should serialize");
-    
+
     // Test deserialization
     use borsh::BorshDeserialize;
     let deserialized = PoolState::try_from_slice(&buffer).expect("Should deserialize");
@@ -119,20 +119,20 @@ fn test_raydium_cpmm_pool_state() {
 #[test]
 fn test_raydium_cpmm_instruction_serialization() {
     use raydium_cpmm::*;
-    
+
     // Test instruction enum serialization
     let init_args = InitializeArgs {
         init_amount_0: 1000,
         init_amount_1: 2000,
         open_time: 1234567890,
     };
-    
+
     let instruction = Instruction::Initialize(init_args);
-    
+
     // Test serialization
     let mut buffer = Vec::new();
     instruction.serialize(&mut buffer).expect("Should serialize instruction");
-    
+
     // Buffer should contain discriminator + args
     assert!(buffer.len() > 8, "Buffer should contain discriminator and args");
 }
@@ -141,23 +141,23 @@ fn test_raydium_cpmm_instruction_serialization() {
 fn test_raydium_cpmm_instruction_deserialization() {
     use raydium_cpmm::*;
     use borsh::BorshSerialize;
-    
+
     // Create instruction data with discriminator
     let init_args = InitializeArgs {
         init_amount_0: 1000,
         init_amount_1: 2000,
         open_time: 1234567890,
     };
-    
+
     let instruction = Instruction::Initialize(init_args.clone());
-    
+
     // Serialize
     let mut buffer = Vec::new();
     instruction.serialize(&mut buffer).expect("Should serialize");
-    
+
     // Deserialize
     let deserialized = Instruction::try_from_slice(&buffer).expect("Should deserialize");
-    
+
     match deserialized {
         Instruction::Initialize(args) => {
             assert_eq!(args.init_amount_0, 1000);
@@ -171,11 +171,11 @@ fn test_raydium_cpmm_instruction_deserialization() {
 #[test]
 fn test_raydium_cpmm_discriminators() {
     use raydium_cpmm::*;
-    
+
     // Test that discriminators are properly defined
     assert_eq!(PoolState::DISCRIMINATOR.len(), 8);
     assert_eq!(AmmConfig::DISCRIMINATOR.len(), 8);
-    
+
     // Discriminators should be unique (not all zeros)
     assert_ne!(PoolState::DISCRIMINATOR, [0; 8]);
     assert_ne!(AmmConfig::DISCRIMINATOR, [0; 8]);
@@ -185,7 +185,7 @@ fn test_raydium_cpmm_discriminators() {
 fn test_raydium_cpmm_try_from_slice_with_discriminator() {
     use raydium_cpmm::*;
     use borsh::BorshSerialize;
-    
+
     // Create a PoolState
     let pool = PoolState {
         auth_bump: 1,
@@ -211,30 +211,30 @@ fn test_raydium_cpmm_try_from_slice_with_discriminator() {
         token_1_program: solana_program::pubkey::Pubkey::new_unique(),
         observation_key: solana_program::pubkey::Pubkey::new_unique(),
     };
-    
+
     // Serialize with discriminator
     let mut buffer = Vec::new();
     pool.serialize_with_discriminator(&mut buffer)
         .expect("Should serialize with discriminator");
-    
+
     // Should start with discriminator
     assert_eq!(&buffer[..8], &PoolState::DISCRIMINATOR);
-    
+
     // Deserialize with discriminator
     let deserialized = PoolState::try_from_slice_with_discriminator(&buffer)
         .expect("Should deserialize with discriminator");
-    
+
     assert_eq!(pool, deserialized);
 }
 
 #[test]
 fn test_raydium_cpmm_wrong_discriminator_fails() {
     use raydium_cpmm::*;
-    
+
     // Create data with wrong discriminator
     let mut buffer = vec![0; 100];
     buffer[..8].copy_from_slice(&[99, 99, 99, 99, 99, 99, 99, 99]);
-    
+
     // Should fail with wrong discriminator
     let result = PoolState::try_from_slice_with_discriminator(&buffer);
     assert!(result.is_err(), "Should fail with invalid discriminator");
@@ -243,10 +243,10 @@ fn test_raydium_cpmm_wrong_discriminator_fails() {
 #[test]
 fn test_raydium_cpmm_short_data_fails() {
     use raydium_cpmm::*;
-    
+
     // Create data that's too short for discriminator
     let buffer = vec![1, 2, 3];
-    
+
     let result = PoolState::try_from_slice_with_discriminator(&buffer);
     assert!(result.is_err(), "Should fail with data too short");
 }
@@ -258,7 +258,7 @@ fn test_raydium_cpmm_short_data_fails() {
 #[test]
 fn test_raydium_amm_target_orders() {
     use raydium_amm::*;
-    
+
     // Test TargetOrders type
     let target_orders = TargetOrders {
         owner: [1u64; 32],
@@ -287,11 +287,11 @@ fn test_raydium_amm_target_orders() {
         padding3: [0u64; 10],
         free_slot_bits: 12345,
     };
-    
+
     // Test bytemuck operations
     let bytes = bytemuck::bytes_of(&target_orders);
     let from_bytes: &TargetOrders = bytemuck::from_bytes(bytes);
-    
+
     assert_eq!({ from_bytes.target_x }, 1000);
     assert_eq!({ from_bytes.target_y }, 2000);
 }
@@ -306,7 +306,7 @@ fn test_all_modules_have_instruction_enum() {
     use raydium_cpmm::Instruction as CpmmInstruction;
     use raydium_amm::Instruction as AmmInstruction;
     use raydium_clmm::Instruction as ClmmInstruction;
-    
+
     // These should compile if the enums exist
     let _cpmm: Option<CpmmInstruction> = None;
     let _amm: Option<AmmInstruction> = None;
@@ -316,7 +316,7 @@ fn test_all_modules_have_instruction_enum() {
 #[test]
 fn test_debug_trait_implementation() {
     use raydium_cpmm::*;
-    
+
     // Test that Debug is implemented
     let config = AmmConfig {
         bump: 1,
@@ -330,7 +330,7 @@ fn test_debug_trait_implementation() {
         fund_owner: solana_program::pubkey::Pubkey::new_unique(),
         padding: [0; 16],
     };
-    
+
     let debug_str = format!("{:?}", config);
     assert!(debug_str.contains("AmmConfig"));
 }
@@ -338,7 +338,7 @@ fn test_debug_trait_implementation() {
 #[test]
 fn test_clone_trait_implementation() {
     use raydium_cpmm::*;
-    
+
     let config = AmmConfig {
         bump: 1,
         disable_create_pool: false,
@@ -351,7 +351,7 @@ fn test_clone_trait_implementation() {
         fund_owner: solana_program::pubkey::Pubkey::new_unique(),
         padding: [0; 16],
     };
-    
+
     let cloned = config.clone();
     assert_eq!(config, cloned);
 }
@@ -359,9 +359,9 @@ fn test_clone_trait_implementation() {
 #[test]
 fn test_partial_eq_trait_implementation() {
     use raydium_cpmm::*;
-    
+
     let pubkey = solana_program::pubkey::Pubkey::new_unique();
-    
+
     let config1 = AmmConfig {
         bump: 1,
         disable_create_pool: false,
@@ -374,7 +374,7 @@ fn test_partial_eq_trait_implementation() {
         fund_owner: pubkey,
         padding: [0; 16],
     };
-    
+
     let config2 = AmmConfig {
         bump: 1,
         disable_create_pool: false,
@@ -387,7 +387,7 @@ fn test_partial_eq_trait_implementation() {
         fund_owner: pubkey,
         padding: [0; 16],
     };
-    
+
     assert_eq!(config1, config2);
 }
 */
@@ -396,5 +396,8 @@ fn test_partial_eq_trait_implementation() {
 fn test_placeholder() {
     // This is a placeholder test so that the test suite runs even without generated code
     // To run the full integration tests, run `just generate` first, then uncomment the tests above
-    assert!(true, "Integration tests require generated code. Run `just generate` first.");
+    assert!(
+        true,
+        "Integration tests require generated code. Run `just generate` first."
+    );
 }

@@ -8,6 +8,15 @@ clean:
     rm -rf generated
     cargo clean
 
+check: clean
+    cargo check --all --all-targets --all-features
+
+fmt:
+    cargo fmt --all
+
+clippy:
+    cargo clippy --all --all-targets --all-features -- --deny warnings
+
 generate: clean
     #!/usr/bin/env bash
     set -euo pipefail
@@ -17,7 +26,7 @@ generate: clean
         cargo run -- -i "$path" -o generated -m "$module"
     done
 
-check: generate
+generate-and-check: generate
     #!/usr/bin/env bash
     set -euo pipefail
     for project in {{projects}}; do

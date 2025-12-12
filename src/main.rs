@@ -49,7 +49,7 @@ fn main() -> Result<()> {
     // Create crate structure
     let crate_dir = cli.output.join(&cli.module);
     let src_dir = crate_dir.join("src");
-    
+
     fs::create_dir_all(&src_dir).context(format!(
         "Failed to create crate source directory: {:?}",
         src_dir
@@ -86,8 +86,10 @@ fn main() -> Result<()> {
 
     // Write instructions.rs
     let instructions_file = src_dir.join("instructions.rs");
-    fs::write(&instructions_file, &generated_code.instructions)
-        .context(format!("Failed to write instructions.rs: {:?}", instructions_file))?;
+    fs::write(&instructions_file, &generated_code.instructions).context(format!(
+        "Failed to write instructions.rs: {:?}",
+        instructions_file
+    ))?;
 
     // Write errors.rs (may be empty)
     if !generated_code.errors.is_empty() {

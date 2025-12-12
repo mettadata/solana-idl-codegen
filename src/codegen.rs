@@ -47,22 +47,22 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     if let Some(types) = &idl.types {
         for ty in types {
             let mut type_tokens = generate_type_def(ty)?;
-            
+
             // Check if this type has a discriminator (is an account)
             let has_discriminator = account_discriminators.contains_key(&ty.name);
-            
+
             // Add discriminator methods if there's a matching account discriminator
             if let Some(disc) = account_discriminators.get(&ty.name) {
                 let name = format_ident!("{}", ty.name);
                 let disc_bytes = disc.iter().map(|b| quote! { #b });
-                
+
                 // Check if this type uses bytemuck serialization
                 let use_bytemuck = ty
                     .serialization
                     .as_ref()
                     .map(|s| s == "bytemuckunsafe" || s == "bytemuck")
                     .unwrap_or(false);
-                
+
                 if use_bytemuck {
                     // For bytemuck types, use bytemuck for deserialization
                     type_tokens.extend(quote! {
@@ -126,7 +126,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                     });
                 }
             }
-            
+
             // Types with discriminators go to accounts module, others to types module
             if has_discriminator {
                 accounts_tokens.extend(type_tokens);
@@ -155,7 +155,8 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     // Format each module with appropriate imports
     let types_code = format_module(types_tokens, &[], "types")?;
     let accounts_code = format_module(accounts_tokens, &["types"], "accounts")?;
-    let instructions_code = format_module(instructions_tokens, &["types", "accounts"], "instructions")?;
+    let instructions_code =
+        format_module(instructions_tokens, &["types", "accounts"], "instructions")?;
     let errors_code = format_module(errors_tokens, &[], "errors")?;
     let events_code = format_module(events_tokens, &["types"], "events")?;
 
@@ -219,7 +220,7 @@ fn format_module(tokens: TokenStream, imports: &[&str], module_type: &str) -> Re
     // Format the code with common imports
     let code = quote! {
         #common_imports
-        
+
         #import_tokens
 
         #[allow(clippy::all)]
@@ -316,11 +317,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
         .unwrap_or(false);
 
     // Check if type is packed (for repr attribute)
-    let is_packed = ty
-        .repr
-        .as_ref()
-        .and_then(|r| r.packed)
-        .unwrap_or(false);
+    let is_packed = ty.repr.as_ref().and_then(|r| r.packed).unwrap_or(false);
 
     let repr_attr = if use_bytemuck && is_packed {
         quote! { #[repr(C, packed)] }
@@ -335,7 +332,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
             // Check if this struct has large arrays (> 32 elements)
             // If so, we can't derive serde automatically
             let has_large_arrays = has_large_arrays_in_struct(fields);
-            
+
             match fields {
                 StructFields::Named(fields) => {
                     let field_tokens: Vec<_> = fields
@@ -344,7 +341,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                             let field_name = format_ident!("{}", f.name.to_snake_case());
                             let field_type = map_idl_type(&f.ty);
                             let field_docs = generate_docs(f.docs.as_ref());
-                            
+
                             quote! {
                                 #field_docs
                                 pub #field_name: #field_type
@@ -389,7 +386,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                 }
                 StructFields::Tuple(types) => {
                     let field_types: Vec<_> = types.iter().map(map_idl_type).collect();
-                    
+
                     if use_bytemuck {
                         // For bytemuck types, we need unsafe implementations for Pod and Zeroable
                         Ok(quote! {
@@ -486,12 +483,12 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
             serialization: None,
             repr: None,
         })?;
-        
+
         // Add discriminator methods if discriminator is present
         if let Some(disc) = &account.discriminator {
             let name = format_ident!("{}", account.name);
             let disc_bytes = disc.iter().map(|b| quote! { #b });
-            
+
             tokens.extend(quote! {
                 impl #name {
                     pub const DISCRIMINATOR: [u8; 8] = [#(#disc_bytes),*];
@@ -519,7 +516,7 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
                 }
             });
         }
-        
+
         Ok(tokens)
     } else {
         // In new format, accounts are references to types defined elsewhere
@@ -528,7 +525,10 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
     }
 }
 
-fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> Result<TokenStream> {
+fn generate_instructions(
+    instructions: &[Instruction],
+    has_program_id: bool,
+) -> Result<TokenStream> {
     let mut tokens = TokenStream::new();
 
     // Generate module-level discriminator constants and IxData wrapper structs for each instruction
@@ -537,7 +537,7 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
         let ix_name_pascal = ix.name.to_pascal_case();
         let discm_const_name = format_ident!("{}_IX_DISCM", ix_name_snake.to_uppercase());
         let ix_data_struct = format_ident!("{}IxData", ix_name_pascal);
-        
+
         // Get discriminator bytes
         let discriminator_bytes: Vec<u8> = if let Some(disc) = &ix.discriminator {
             disc.clone()
@@ -545,14 +545,14 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
             // Use index as discriminator if not provided (old format)
             (idx as u64).to_le_bytes().to_vec()
         };
-        
+
         let disc_bytes = discriminator_bytes.iter().map(|b| quote! { #b });
-        
+
         // Generate module-level discriminator constant
         tokens.extend(quote! {
             pub const #discm_const_name: [u8; 8] = [#(#disc_bytes),*];
         });
-        
+
         // Generate IxData wrapper struct
         if ix.args.is_empty() {
             // No-args instruction
@@ -592,7 +592,7 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
         } else {
             // Instruction with args
             let args_struct = format_ident!("{}IxArgs", ix_name_pascal);
-            
+
             tokens.extend(quote! {
                 #[derive(Clone, Debug, PartialEq)]
                 pub struct #ix_data_struct(pub #args_struct);
@@ -655,8 +655,9 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
         .iter()
         .map(|ix| {
             let variant_name = format_ident!("{}", ix.name.to_pascal_case());
-            let discm_const_name = format_ident!("{}_IX_DISCM", ix.name.to_snake_case().to_uppercase());
-            
+            let discm_const_name =
+                format_ident!("{}_IX_DISCM", ix.name.to_snake_case().to_uppercase());
+
             if ix.args.is_empty() {
                 quote! {
                     Self::#variant_name => {
@@ -686,9 +687,9 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
             } else {
                 (idx as u64).to_le_bytes().to_vec()
             };
-            
+
             let disc_pattern = discriminator_bytes.iter().map(|b| quote! { #b });
-            
+
             if ix.args.is_empty() {
                 quote! {
                     [#(#disc_pattern),*] => Ok(Self::#variant_name)
@@ -710,14 +711,14 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
         pub enum Instruction {
             #(#instruction_variants),*
         }
-        
+
         impl Instruction {
             pub fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                 match self {
                     #(#serialize_arms),*
                 }
             }
-            
+
             pub fn try_from_slice(data: &[u8]) -> std::io::Result<Self> {
                 if data.len() < 8 {
                     return Err(std::io::Error::new(
@@ -725,10 +726,10 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
                         "Data too short for instruction discriminator",
                     ));
                 }
-                
+
                 use borsh::BorshDeserialize;
                 let mut buf = &data[8..];
-                
+
                 match &data[..8] {
                     #(#deserialize_arms),*,
                     _ => Err(std::io::Error::new(
@@ -781,12 +782,13 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
             .collect();
 
         // Generate const for accounts length
-        let accounts_len_const = format_ident!("{}_IX_ACCOUNTS_LEN", ix.name.to_snake_case().to_uppercase());
+        let accounts_len_const =
+            format_ident!("{}_IX_ACCOUNTS_LEN", ix.name.to_snake_case().to_uppercase());
         let accounts_len = ix.accounts.len();
 
         tokens.extend(quote! {
             pub const #accounts_len_const: usize = #accounts_len;
-            
+
             #[derive(Debug, Clone, PartialEq)]
             pub struct #keys_struct {
                 #(#account_fields),*
@@ -844,7 +846,7 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
                     })
                 }
             });
-            
+
             // Only generate the version without program_id if we have a program ID
             if has_program_id {
                 tokens.extend(quote! {
@@ -856,7 +858,7 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
         } else {
             // Instruction with args
             let args_struct = format_ident!("{}IxArgs", ix.name.to_pascal_case());
-            
+
             tokens.extend(quote! {
                 pub fn #ix_with_program_id_fn(
                     program_id: Pubkey,
@@ -872,7 +874,7 @@ fn generate_instructions(instructions: &[Instruction], has_program_id: bool) -> 
                     })
                 }
             });
-            
+
             // Only generate the version without program_id if we have a program ID
             if has_program_id {
                 tokens.extend(quote! {
@@ -907,13 +909,13 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
     Ok(quote! {
         use solana_program::program_error::ProgramError;
         use thiserror::Error;
-        
+
         #[derive(Clone, Copy, Debug, Eq, Error, num_derive::FromPrimitive, PartialEq)]
         #[repr(u32)]
         pub enum ErrorCode {
             #(#error_variants),*
         }
-        
+
         impl From<ErrorCode> for ProgramError {
             fn from(e: ErrorCode) -> Self {
                 ProgramError::Custom(e as u32)
@@ -930,7 +932,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
             _ => false,
         }
     }
-    
+
     // Helper function to generate field tokens with Pubkey serialization
     fn generate_field_tokens(fields: &[EventField]) -> Vec<TokenStream> {
         fields
@@ -955,7 +957,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
             })
             .collect()
     }
-    
+
     // Helper function to generate field tokens from struct fields
     fn generate_field_tokens_from_struct_fields(fields: &StructFields) -> Vec<TokenStream> {
         match fields {
@@ -988,11 +990,11 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
             }
         }
     }
-    
+
     let name = format_ident!("{}", event.name);
     let wrapper_name = format_ident!("{}Event", event.name);
     let docs = format!("Event: {}", event.name);
-    
+
     // Determine if we have fields to generate
     let field_tokens = if let Some(fields) = &event.fields {
         // Old format: fields are directly in the event
@@ -1002,9 +1004,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
         if let Some(type_def) = types.iter().find(|t| t.name == event.name) {
             // Found the type definition for this event
             match &type_def.ty {
-                TypeDefType::Struct { fields } => {
-                    generate_field_tokens_from_struct_fields(fields)
-                }
+                TypeDefType::Struct { fields } => generate_field_tokens_from_struct_fields(fields),
                 TypeDefType::Enum { .. } => {
                     // Enums as events are unusual, skip them
                     return Ok(TokenStream::new());
@@ -1018,24 +1018,25 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
         // No fields and no types to look up
         return Ok(TokenStream::new());
     };
-    
+
     // If we have no fields, return empty
     if field_tokens.is_empty() {
         return Ok(TokenStream::new());
     }
-    
+
     let mut tokens = TokenStream::new();
-    
+
     // Generate module-level discriminator constant
     if let Some(disc) = &event.discriminator {
-        let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+        let discm_const =
+            format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
         let disc_bytes = disc.iter().map(|b| quote! { #b });
-        
+
         tokens.extend(quote! {
             pub const #discm_const: [u8; 8] = [#(#disc_bytes),*];
         });
     }
-    
+
     // Generate data struct
     tokens.extend(quote! {
         #[doc = #docs]
@@ -1048,20 +1049,21 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
 
     // Generate wrapper struct with discriminator handling
     if let Some(_disc) = &event.discriminator {
-        let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
-        
+        let discm_const =
+            format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+
         tokens.extend(quote! {
             #[derive(Clone, Debug, PartialEq)]
             #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
             pub struct #wrapper_name(pub #name);
-            
+
             impl borsh::BorshSerialize for #wrapper_name {
                 fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
                     #discm_const.serialize(writer)?;
                     self.0.serialize(writer)
                 }
             }
-            
+
             impl #wrapper_name {
                 pub fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
                     let maybe_discm = <[u8; 8]>::deserialize(buf)?;
@@ -1079,7 +1081,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
             }
         });
     }
-    
+
     Ok(tokens)
 }
 
@@ -1167,10 +1169,7 @@ mod tests {
             (IdlType::Simple("f32".to_string()), quote! { f32 }),
             (IdlType::Simple("f64".to_string()), quote! { f64 }),
             (IdlType::Simple("string".to_string()), quote! { String }),
-            (
-                IdlType::Simple("publicKey".to_string()),
-                quote! { Pubkey },
-            ),
+            (IdlType::Simple("publicKey".to_string()), quote! { Pubkey }),
             (IdlType::Simple("pubkey".to_string()), quote! { Pubkey }),
             (IdlType::Simple("Pubkey".to_string()), quote! { Pubkey }),
             (IdlType::Simple("bytes".to_string()), quote! { Vec<u8> }),
@@ -1432,7 +1431,11 @@ mod tests {
         let result = generate_type_def(&type_def).unwrap();
         let result_str = result.to_string();
 
-        assert!(result_str.contains("repr") && result_str.contains("C") && result_str.contains("packed"));
+        assert!(
+            result_str.contains("repr")
+                && result_str.contains("C")
+                && result_str.contains("packed")
+        );
     }
 
     #[test]
@@ -1660,17 +1663,17 @@ mod tests {
         // Check for module-level discriminator constant
         assert!(result_str.contains("TRANSFER_EVENT_EVENT_DISCM"));
         assert!(result_str.contains("[1u8 , 2u8 , 3u8 , 4u8 , 5u8 , 6u8 , 7u8 , 8u8]"));
-        
+
         // Check for data struct
         assert!(result_str.contains("pub struct TransferEvent"));
         assert!(result_str.contains("pub from : Pubkey"));
         assert!(result_str.contains("pub to : Pubkey"));
         assert!(result_str.contains("pub amount : u64"));
-        
+
         // Check for wrapper struct
         assert!(result_str.contains("pub struct TransferEventEvent"));
         assert!(result_str.contains("pub fn deserialize"));
-        
+
         // Check for custom serde serialization of Pubkey fields
         assert!(result_str.contains("serialize_pubkey_as_string"));
     }
@@ -1711,7 +1714,7 @@ mod tests {
 
     #[test]
     fn test_generate_event_from_type_definition() {
-        // New IDL format: event has only name and discriminator, 
+        // New IDL format: event has only name and discriminator,
         // fields are in a matching type definition
         let event = Event {
             name: "AdminSetCreatorEvent".to_string(),
@@ -1751,17 +1754,17 @@ mod tests {
         // Check for module-level discriminator constant
         assert!(result_str.contains("ADMIN_SET_CREATOR_EVENT_EVENT_DISCM"));
         assert!(result_str.contains("[64u8 , 69u8 , 192u8 , 104u8 , 29u8 , 30u8 , 25u8 , 107u8]"));
-        
+
         // Check for data struct
         assert!(result_str.contains("pub struct AdminSetCreatorEvent"));
         assert!(result_str.contains("pub timestamp : i64"));
         assert!(result_str.contains("pub admin_set_creator_authority : Pubkey"));
         assert!(result_str.contains("pub mint : Pubkey"));
-        
+
         // Check for wrapper struct
         assert!(result_str.contains("pub struct AdminSetCreatorEventEvent"));
         assert!(result_str.contains("pub fn deserialize"));
-        
+
         // Check for custom serde serialization of Pubkey fields
         assert!(result_str.contains("serialize_pubkey_as_string"));
     }
@@ -1979,10 +1982,17 @@ mod tests {
         };
 
         let result = generate(&idl, "minimal_program");
-        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Generation should succeed: {:?}",
+            result.err()
+        );
         let code = result.unwrap();
         assert!(code.lib.contains("pub mod"));
-        assert!(code.instructions.contains("use borsh") || code.instructions.contains("pub enum Instruction"));
+        assert!(
+            code.instructions.contains("use borsh")
+                || code.instructions.contains("pub enum Instruction")
+        );
     }
 
     #[test]
@@ -2020,7 +2030,11 @@ mod tests {
         };
 
         let result = generate(&idl, "test_program");
-        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Generation should succeed: {:?}",
+            result.err()
+        );
         let code = result.unwrap();
         assert!(code.types.contains("pub struct TestStruct"));
         assert!(code.types.contains("pub value: u64"));
@@ -2066,7 +2080,11 @@ mod tests {
         };
 
         let result = generate(&idl, "test_program");
-        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Generation should succeed: {:?}",
+            result.err()
+        );
         let code = result.unwrap();
         assert!(code.accounts.contains("DISCRIMINATOR"));
         assert!(code.accounts.contains("try_from_slice_with_discriminator"));
@@ -2115,7 +2133,11 @@ mod tests {
         };
 
         let result = generate(&idl, "test_program");
-        assert!(result.is_ok(), "Generation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Generation should succeed: {:?}",
+            result.err()
+        );
         let code = result.unwrap();
         assert!(code.accounts.contains("bytemuck::try_from_bytes"));
         assert!(code.accounts.contains("bytemuck::bytes_of"));
@@ -2131,7 +2153,7 @@ mod tests {
             instructions: vec![Instruction {
                 name: "transfer".to_string(),
                 docs: Some(vec![
-                    "Transfers tokens from one account to another".to_string(),
+                    "Transfers tokens from one account to another".to_string()
                 ]),
                 discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
                 accounts: vec![
@@ -2298,7 +2320,9 @@ mod tests {
         let result = generate(&idl, "token_program");
         assert!(result.is_ok());
         let code = result.unwrap();
-        assert!(code.lib.contains("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"));
+        assert!(code
+            .lib
+            .contains("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"));
     }
 
     // ============================================================================
@@ -2322,7 +2346,7 @@ mod tests {
         assert!(result_str.contains("INITIALIZE_IX_DISCM"));
         assert!(result_str.contains("175"));
         assert!(result_str.contains("237"));
-        
+
         // Check for IxData struct
         assert!(result_str.contains("InitializeIxData"));
         assert!(result_str.contains("deserialize"));
@@ -2348,14 +2372,14 @@ mod tests {
 
         // Check for discriminator constant
         assert!(result_str.contains("TRANSFER_IX_DISCM"));
-        
+
         // Check for IxData wrapper struct
         assert!(result_str.contains("TransferIxData"));
         assert!(result_str.contains("TransferIxArgs"));
-        
+
         // Check for From implementation
         assert!(result_str.contains("From"));
-        
+
         // Check for IxArgs struct
         assert!(result_str.contains("pub amount"));
         assert!(result_str.contains("u64"));
@@ -2422,7 +2446,7 @@ mod tests {
         assert!(result_str.contains("TransferKeys"));
         assert!(result_str.contains("pub from : Pubkey"));
         assert!(result_str.contains("pub to : Pubkey"));
-        
+
         // Check for accounts length constant
         assert!(result_str.contains("TRANSFER_IX_ACCOUNTS_LEN"));
         assert!(result_str.contains(": usize = 2"));
@@ -2471,7 +2495,7 @@ mod tests {
 
         // Check for From implementation
         assert!(result_str.contains("impl From < InitializeKeys > for [AccountMeta"));
-        
+
         // Check that is_signer and is_writable are set correctly
         assert!(result_str.contains("is_signer : true"));
         assert!(result_str.contains("is_signer : false"));
@@ -2546,17 +2570,15 @@ mod tests {
             name: "initialize".to_string(),
             docs: None,
             discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            accounts: vec![
-                AccountArg {
-                    name: "config".to_string(),
-                    docs: None,
-                    signer: false,
-                    writable: true,
-                    pda: None,
-                    address: None,
-                    optional: None,
-                },
-            ],
+            accounts: vec![AccountArg {
+                name: "config".to_string(),
+                docs: None,
+                signer: false,
+                writable: true,
+                pda: None,
+                address: None,
+                optional: None,
+            }],
             args: vec![],
         }];
 
@@ -2576,17 +2598,15 @@ mod tests {
             name: "transfer".to_string(),
             docs: None,
             discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            accounts: vec![
-                AccountArg {
-                    name: "from".to_string(),
-                    docs: None,
-                    signer: true,
-                    writable: true,
-                    pda: None,
-                    address: None,
-                    optional: None,
-                },
-            ],
+            accounts: vec![AccountArg {
+                name: "from".to_string(),
+                docs: None,
+                signer: true,
+                writable: true,
+                pda: None,
+                address: None,
+                optional: None,
+            }],
             args: vec![Arg {
                 name: "amount".to_string(),
                 ty: IdlType::Simple("u64".to_string()),
@@ -2609,17 +2629,15 @@ mod tests {
             name: "swap".to_string(),
             docs: None,
             discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            accounts: vec![
-                AccountArg {
-                    name: "user".to_string(),
-                    docs: None,
-                    signer: true,
-                    writable: false,
-                    pda: None,
-                    address: None,
-                    optional: None,
-                },
-            ],
+            accounts: vec![AccountArg {
+                name: "user".to_string(),
+                docs: None,
+                signer: true,
+                writable: false,
+                pda: None,
+                address: None,
+                optional: None,
+            }],
             args: vec![Arg {
                 name: "amount".to_string(),
                 ty: IdlType::Simple("u64".to_string()),
@@ -2646,7 +2664,9 @@ mod tests {
         let type_def = TypeDef {
             name: "EmptyStruct".to_string(),
             docs: None,
-            ty: TypeDefType::Struct { fields: StructFields::Named(vec![]) },
+            ty: TypeDefType::Struct {
+                fields: StructFields::Named(vec![]),
+            },
             serialization: None,
             repr: None,
         };
@@ -2669,7 +2689,9 @@ mod tests {
         let result_str = result.to_string();
         // Token streams may have different whitespace, just check the structure
         assert!(
-            result_str.contains("Vec") && result_str.contains("Option") && result_str.contains("u64"),
+            result_str.contains("Vec")
+                && result_str.contains("Option")
+                && result_str.contains("u64"),
             "Result should contain deeply nested type: {}",
             result_str
         );

@@ -567,15 +567,13 @@ mod tests {
         let json = r#"{"kind":"struct","fields":[{"name":"value","type":"u64"}]}"#;
         let result: TypeDefType = serde_json::from_str(json).unwrap();
         match result {
-            TypeDefType::Struct { fields } => {
-                match fields {
-                    StructFields::Named(fields) => {
-                        assert_eq!(fields.len(), 1);
-                        assert_eq!(fields[0].name, "value");
-                    }
-                    _ => panic!("Expected Named struct fields"),
+            TypeDefType::Struct { fields } => match fields {
+                StructFields::Named(fields) => {
+                    assert_eq!(fields.len(), 1);
+                    assert_eq!(fields[0].name, "value");
                 }
-            }
+                _ => panic!("Expected Named struct fields"),
+            },
             _ => panic!("Expected Struct variant"),
         }
     }
@@ -585,18 +583,16 @@ mod tests {
         let json = r#"{"kind":"struct","fields":["bool"]}"#;
         let result: TypeDefType = serde_json::from_str(json).unwrap();
         match result {
-            TypeDefType::Struct { fields } => {
-                match fields {
-                    StructFields::Tuple(types) => {
-                        assert_eq!(types.len(), 1);
-                        match &types[0] {
-                            IdlType::Simple(s) => assert_eq!(s, "bool"),
-                            _ => panic!("Expected simple type"),
-                        }
+            TypeDefType::Struct { fields } => match fields {
+                StructFields::Tuple(types) => {
+                    assert_eq!(types.len(), 1);
+                    match &types[0] {
+                        IdlType::Simple(s) => assert_eq!(s, "bool"),
+                        _ => panic!("Expected simple type"),
                     }
-                    _ => panic!("Expected Tuple struct fields"),
                 }
-            }
+                _ => panic!("Expected Tuple struct fields"),
+            },
             _ => panic!("Expected Struct variant"),
         }
     }
