@@ -1,0 +1,370 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Check code formatting
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Lint with clippy
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Run clippy
+        run: cargo clippy --all --all-targets --all-features -- --deny warnings
+
+  # Check main workspace without generating code
+  check-workspace:
+    name: Check Workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Clean and check workspace
+        run: |
+          rm -rf generated
+          cargo clean
+          cargo check --all --all-targets --all-features
+
+  # Generate code and lint generated crates
+  generate-and-lint:
+    name: Generate & Lint Generated
+    runs-on: ubuntu-latest
+    needs: [check-workspace]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Build codegen tool
+        run: cargo build --release
+      
+      - name: Generate code
+        run: |
+          rm -rf generated
+          cargo run --release -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
+          cargo run --release -- -i idl/raydium-idl/raydium_clmm/amm_v3.json -o generated -m raydium_clmm
+          cargo run --release -- -i idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json -o generated -m raydium_cpmm
+          cargo run --release -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
+          cargo run --release -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
+      
+      - name: Format generated code
+        run: |
+          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
+            if [ -d "generated/$project" ]; then
+              echo "Formatting $project..."
+              (cd "generated/$project" && cargo fmt --all)
+            fi
+          done
+      
+      - name: Check formatting of generated code
+        run: |
+          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
+            if [ -d "generated/$project" ]; then
+              echo "Checking formatting of $project..."
+              (cd "generated/$project" && cargo fmt --all -- --check)
+            fi
+          done
+      
+      - name: Run clippy on generated code
+        run: |
+          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
+            if [ -d "generated/$project" ]; then
+              echo "Checking $project with clippy..."
+              (cd "generated/$project" && cargo clippy --all --all-targets --all-features -- --deny warnings)
+            fi
+          done
+
+  # Build all generated crates
+  build-generated:
+    name: Build Generated
+    runs-on: ubuntu-latest
+    needs: [generate-and-lint]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Build codegen tool
+        run: cargo build --release
+      
+      - name: Generate code
+        run: |
+          rm -rf generated
+          cargo run --release -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
+          cargo run --release -- -i idl/raydium-idl/raydium_clmm/amm_v3.json -o generated -m raydium_clmm
+          cargo run --release -- -i idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json -o generated -m raydium_cpmm
+          cargo run --release -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
+          cargo run --release -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
+      
+      - name: Build generated crates
+        run: |
+          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
+            echo "Building $project..."
+            (cd "generated/$project" && cargo build)
+          done
+
+  # Check generated crates compile
+  check-generated:
+    name: Check Generated
+    runs-on: ubuntu-latest
+    needs: [generate-and-lint]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Build codegen tool
+        run: cargo build --release
+      
+      - name: Generate code
+        run: |
+          rm -rf generated
+          cargo run --release -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
+          cargo run --release -- -i idl/raydium-idl/raydium_clmm/amm_v3.json -o generated -m raydium_clmm
+          cargo run --release -- -i idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json -o generated -m raydium_cpmm
+          cargo run --release -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
+          cargo run --release -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
+      
+      - name: Check generated crates
+        run: |
+          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
+            echo "Checking $project..."
+            (cd "generated/$project" && cargo check)
+          done
+
+  # Run all tests
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: [check-workspace]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Build codegen tool
+        run: cargo build --release
+      
+      - name: Generate code
+        run: |
+          rm -rf generated
+          cargo run --release -- -i idl/raydium-idl/raydium_amm/idl.json -o generated -m raydium_amm
+          cargo run --release -- -i idl/raydium-idl/raydium_clmm/amm_v3.json -o generated -m raydium_clmm
+          cargo run --release -- -i idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json -o generated -m raydium_cpmm
+          cargo run --release -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
+          cargo run --release -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
+      
+      - name: Run unit tests
+        run: cargo test
+      
+      - name: Run integration tests
+        run: cargo test --test integration_tests -- --nocapture
+      
+      - name: Run performance tests
+        run: cargo test --test performance_tests -- --nocapture
+
+  # Run benchmarks (optional, can be triggered manually or on schedule)
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      
+      - name: Run benchmarks
+        run: cargo bench
+
