@@ -117,6 +117,8 @@ jobs:
     needs: [check-workspace]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -189,6 +191,8 @@ jobs:
     needs: [generate-and-lint]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -239,6 +243,8 @@ jobs:
     needs: [generate-and-lint]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -289,6 +295,8 @@ jobs:
     needs: [check-workspace]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -341,6 +349,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
