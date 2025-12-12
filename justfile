@@ -8,7 +8,8 @@ clean:
     rm -rf generated
     cargo clean
 
-check: clean
+# Check the main workspace without generating code
+check-workspace: clean
     cargo check --all --all-targets --all-features
 
 fmt:
@@ -26,7 +27,8 @@ generate: clean
         cargo run -- -i "$path" -o generated -m "$module"
     done
 
-generate-and-check: generate
+# Generate code and validate all generated crates (original behavior of 'check')
+check: generate
     #!/usr/bin/env bash
     set -euo pipefail
     for project in {{projects}}; do
