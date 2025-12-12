@@ -41,7 +41,7 @@ clippy-generated:
     done
 
 # Run both fmt and clippy on all generated crates
-lint-generated: fmt-generated clippy-generated
+generated-lint: generate fmt-generated clippy-generated
 
 generate: clean
     #!/usr/bin/env bash
@@ -53,7 +53,7 @@ generate: clean
     done
 
 # Generate code and validate all generated crates (original behavior of 'check')
-check: generate
+generated-check: generate
     #!/usr/bin/env bash
     set -euo pipefail
     for project in {{projects}}; do
@@ -61,7 +61,7 @@ check: generate
         (cd "generated/$project" && cargo check)
     done
 
-build:
+generated-build: clean generate
     #!/usr/bin/env bash
     set -euo pipefail
     for project in {{projects}}; do
