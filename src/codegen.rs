@@ -83,7 +83,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
                                     ));
                                 }
                                 bytemuck::try_from_bytes::<Self>(&data[8..])
-                                    .map(|v| *v)
+                                    .copied()
                                     .map_err(|e| std::io::Error::new(
                                         std::io::ErrorKind::InvalidData,
                                         format!("Bytemuck conversion error: {:?}", e),
@@ -254,6 +254,19 @@ fn generate_lib_module(idl: &Idl) -> String {
         "// Program ID not specified in IDL\n// solana_program::declare_id!(\"YourProgramIdHere\");\n\n".to_string()
     };
 
+    // Check if there are errors to conditionally generate re-exports
+    let has_errors = idl.errors.as_ref().is_some_and(|e| !e.is_empty());
+
+    let errors_reexport = if has_errors {
+        "pub use errors::*;\n"
+    } else {
+        ""
+    };
+
+    // Note: We don't re-export events::* to avoid ambiguous glob re-exports
+    // since events are often also defined in types. Users can access events
+    // via the events module directly (e.g., crate::events::EventName)
+
     format!(
         r#"//! Generated Solana program bindings
 
@@ -267,9 +280,7 @@ pub mod events;
 pub use types::*;
 pub use accounts::*;
 pub use instructions::*;
-pub use errors::*;
-pub use events::*;
-
+{}
 // Helper function for serde serialization of Pubkey as string
 #[cfg(feature = "serde")]
 pub fn serialize_pubkey_as_string<S>(
@@ -282,7 +293,7 @@ where
     serializer.serialize_str(&pubkey.to_string())
 }}
 "#,
-        program_id_declaration
+        program_id_declaration, errors_reexport
     )
 }
 
