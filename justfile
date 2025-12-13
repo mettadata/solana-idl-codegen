@@ -25,7 +25,7 @@ fmt-generated:
     for project in {{projects}}; do
         if [ -d "generated/$project" ]; then
             echo "Formatting $project..."
-            (cd "generated/$project" && cargo fmt --all)
+            (cd "generated/$project" && cargo fmt --all --check)
         fi
     done
 
