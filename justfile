@@ -15,6 +15,10 @@ check-workspace: clean
 fmt:
     cargo fmt --all
 
+# Check formatting without modifying files
+fmt-check:
+    cargo fmt --all --check
+
 clippy:
     cargo clippy --all --all-targets --all-features -- --deny warnings
 
@@ -110,3 +114,34 @@ test-with-timing: generate
     time cargo test --test integration_tests -- --nocapture
     echo ""
     cargo test --test performance_tests -- --nocapture
+
+# Run all checks: fmt, clippy, and tests for both codegen and generated code
+check-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Checking codegen workspace ==="
+    echo ""
+    echo "1. Checking formatting..."
+    just fmt-check
+    echo ""
+    echo "2. Running clippy..."
+    just clippy
+    echo ""
+    echo "3. Running unit tests..."
+    just test
+    echo ""
+    echo "=== Checking generated code ==="
+    echo ""
+    echo "4. Generating code..."
+    just generate
+    echo ""
+    echo "5. Checking formatting on generated code..."
+    just fmt-generated
+    echo ""
+    echo "6. Running clippy on generated code..."
+    just clippy-generated
+    echo ""
+    echo "7. Running integration tests..."
+    cargo test --test integration_tests -- --nocapture
+    echo ""
+    echo "✓ All checks passed!"
