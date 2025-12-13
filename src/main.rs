@@ -430,7 +430,8 @@ fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std:
                     event.name
                 ));
             }
-            match_arms.push_str("_ => {}");
+            // Add catch-all for unhandled Ok variants (before Err arm)
+            match_arms.push_str("Ok(_) => println!(\"Parsed other event variant\"),\n        ");
             format!(
                 r#"//! Example: Parsing events from transaction logs
 //!
