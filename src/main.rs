@@ -295,7 +295,7 @@ fn generate_examples(examples_dir: &Path, module_name: &str, idl: &idl::Idl) -> 
         let first_ix = &idl.instructions[0];
         let ix_name_snake = first_ix.name.to_snake_case();
         let ix_name_pascal = first_ix.name.to_pascal_case();
-        
+
         // Generate keys struct initialization with all fields (commented out)
         let mut keys_fields = String::new();
         for account in &first_ix.accounts {
@@ -305,7 +305,7 @@ fn generate_examples(examples_dir: &Path, module_name: &str, idl: &idl::Idl) -> 
                 field_name
             ));
         }
-        
+
         // Generate args struct initialization if needed (commented out)
         let args_init = if !first_ix.args.is_empty() {
             let mut args_fields = String::new();
@@ -323,7 +323,7 @@ fn generate_examples(examples_dir: &Path, module_name: &str, idl: &idl::Idl) -> 
         } else {
             String::new()
         };
-        
+
         let ix_name = &first_ix.name;
         format!(
             r#"//! Example: Building an instruction
@@ -365,7 +365,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No instructions defined in IDL
     Ok(())
 }
-"#.to_string()
+"#
+        .to_string()
     };
 
     let build_ix_file = examples_dir.join("build_instruction.rs");
@@ -409,7 +410,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No accounts defined in IDL
     Ok(())
 }
-"#.to_string()
+"#
+            .to_string()
         }
     } else {
         r#"//! Example: Parsing and validating an account
@@ -420,7 +422,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No accounts defined in IDL
     Ok(())
 }
-"#.to_string()
+"#
+        .to_string()
     };
 
     let parse_account_file = examples_dir.join("parse_account.rs");
@@ -473,7 +476,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No events defined in IDL
     Ok(())
 }
-"#.to_string()
+"#
+            .to_string()
         }
     } else {
         r#"//! Example: Parsing events from transaction logs
@@ -484,7 +488,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No events defined in IDL
     Ok(())
 }
-"#.to_string()
+"#
+        .to_string()
     };
 
     let parse_events_file = examples_dir.join("parse_events.rs");

@@ -808,10 +808,13 @@ fn test_example_files_content() {
                 fs::read_to_string(&build_ix_path).expect("Failed to read build_instruction.rs");
             // Check for imports (either active or commented) or instruction building references
             // If no instructions are defined, the file will be minimal with just a main function
-            let has_imports = (content.contains("use") && (content.contains("::*") || content.contains("::{"))) || content.contains("// use");
-            let has_instruction_refs = content.contains("Keys") || content.contains("_ix") || content.contains("IxArgs");
+            let has_imports = (content.contains("use")
+                && (content.contains("::*") || content.contains("::{")))
+                || content.contains("// use");
+            let has_instruction_refs =
+                content.contains("Keys") || content.contains("_ix") || content.contains("IxArgs");
             let no_instructions_defined = content.contains("No instructions defined");
-            
+
             assert!(
                 has_imports || has_instruction_refs || no_instructions_defined,
                 "{} build_instruction.rs should have imports, instruction references, or indicate no instructions",
@@ -831,10 +834,13 @@ fn test_example_files_content() {
                 fs::read_to_string(&parse_account_path).expect("Failed to read parse_account.rs");
             // Check for imports (either active or commented) or account parsing references
             // If no accounts are defined, the file will be minimal with just a main function
-            let has_imports = (content.contains("use") && (content.contains("::*") || content.contains("::{"))) || content.contains("// use");
-            let has_account_refs = content.contains("AccountInfo") || content.contains("try_from_account_info");
+            let has_imports = (content.contains("use")
+                && (content.contains("::*") || content.contains("::{")))
+                || content.contains("// use");
+            let has_account_refs =
+                content.contains("AccountInfo") || content.contains("try_from_account_info");
             let no_accounts_defined = content.contains("No accounts defined");
-            
+
             assert!(
                 has_imports || has_account_refs || no_accounts_defined,
                 "{} parse_account.rs should have imports, account parsing references, or indicate no accounts",
@@ -858,9 +864,11 @@ fn test_example_files_content() {
             // Check for imports (either active or commented) or event parsing references
             // If no events are defined, the file will be minimal with just a main function
             let has_events = content.contains("parse_event") || content.contains("ParsedEvent");
-            let has_imports = (content.contains("use") && (content.contains("::*") || content.contains("::{"))) || content.contains("// use");
+            let has_imports = (content.contains("use")
+                && (content.contains("::*") || content.contains("::{")))
+                || content.contains("// use");
             let no_events_defined = content.contains("No events defined");
-            
+
             assert!(
                 has_imports || has_events || no_events_defined,
                 "{} parse_events.rs should have imports, event parsing references, or indicate no events",
