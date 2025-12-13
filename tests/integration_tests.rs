@@ -7,7 +7,6 @@
 
 use std::path::Path;
 use std::time::Instant;
-use heck::ToPascalCase;
 
 // ============================================================================
 // File Structure Tests

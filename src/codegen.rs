@@ -548,6 +548,8 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
 
     // Collect all account types with discriminators
     let mut account_validations = Vec::new();
+    // Track which account names have already been processed to avoid duplicates
+    let mut processed_accounts = std::collections::HashSet::new();
 
     // Check accounts from accounts array (old format)
     if let Some(accounts) = &idl.accounts {
@@ -555,6 +557,9 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
             if account.discriminator.is_some() || account.ty.is_some() {
                 let name = format_ident!("{}", account.name);
                 let docs = generate_docs(account.docs.as_ref());
+                
+                // Track that we've processed this account
+                processed_accounts.insert(account.name.clone());
                 
                 account_validations.push(quote! {
                     #docs
@@ -637,95 +642,8 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
         }
     }
 
-    // Check types that have discriminators (new format)
-    if let Some(types) = &idl.types {
-        for ty in types {
-            if let Some(accounts) = &idl.accounts {
-                if accounts.iter().any(|a| a.name == ty.name && a.discriminator.is_some()) {
-                    let name = format_ident!("{}", ty.name);
-                    let docs = generate_docs(ty.docs.as_ref());
-                    
-                    account_validations.push(quote! {
-                        #docs
-                        impl #name {
-                            /// Validate that an AccountInfo matches this account type
-                            ///
-                            /// This function checks:
-                            /// - The account owner matches the program ID
-                            /// - The account data starts with the correct discriminator
-                            /// - The account data is long enough to contain the discriminator
-                            ///
-                            /// # Example
-                            /// ```no_run
-                            /// use solana_program::account_info::AccountInfo;
-                            /// use crate::accounts::*;
-                            ///
-                            /// fn validate_account(account_info: &AccountInfo) -> Result<(), ValidationError> {
-                            ///     #name::validate_account_info(account_info)?;
-                            ///     Ok(())
-                            /// }
-                            /// ```
-                            pub fn validate_account_info(
-                                account_info: &solana_program::account_info::AccountInfo,
-                            ) -> Result<(), ValidationError> {
-                            // Check owner
-                            if account_info.owner != &#program_id_expr {
-                                return Err(ValidationError::InvalidOwner {
-                                    expected: #program_id_expr,
-                                    actual: *account_info.owner,
-                                });
-                            }
-
-                                // Check discriminator
-                                let data = account_info.data.borrow();
-                                if data.len() < 8 {
-                                    return Err(ValidationError::DataTooShort {
-                                        expected: 8,
-                                        actual: data.len(),
-                                    });
-                                }
-
-                                if data[..8] != Self::DISCRIMINATOR {
-                                    return Err(ValidationError::InvalidDiscriminator {
-                                        expected: Self::DISCRIMINATOR,
-                                        actual: <[u8; 8]>::try_from(&data[..8])
-                                            .map_err(|_| ValidationError::DataTooShort {
-                                                expected: 8,
-                                                actual: data.len(),
-                                            })?,
-                                    });
-                                }
-
-                                Ok(())
-                            }
-
-                            /// Validate and deserialize an account from AccountInfo
-                            ///
-                            /// This is a convenience method that combines validation and deserialization.
-                            ///
-                            /// # Example
-                            /// ```no_run
-                            /// use solana_program::account_info::AccountInfo;
-                            /// use crate::accounts::*;
-                            ///
-                            /// fn load_account(account_info: &AccountInfo) -> Result<#name, ValidationError> {
-                            ///     #name::try_from_account_info(account_info)
-                            /// }
-                            /// ```
-                            pub fn try_from_account_info(
-                                account_info: &solana_program::account_info::AccountInfo,
-                            ) -> Result<Self, ValidationError> {
-                                Self::validate_account_info(account_info)?;
-                                let data = account_info.data.borrow();
-                                Self::try_from_slice_with_discriminator(&data)
-                                    .map_err(|e| ValidationError::DeserializationError(e.to_string()))
-                            }
-                        }
-                    });
-                }
-            }
-        }
-    }
+    // Note: Types with discriminators that are referenced in the accounts array
+    // are already handled above. We don't need to process them again here.
 
     if account_validations.is_empty() {
         return Ok(TokenStream::new());
