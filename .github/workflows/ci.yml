@@ -37,7 +37,7 @@ jobs:
             ${{ runner.os }}-cargo-
       
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all --check
 
   # Lint with clippy
   clippy:
@@ -162,7 +162,7 @@ jobs:
           for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
             if [ -d "generated/$project" ]; then
               echo "Formatting $project..."
-              (cd "generated/$project" && cargo fmt --all)
+              (cd "generated/$project" && cargo fmt --all --check)
             fi
           done
       
@@ -171,7 +171,7 @@ jobs:
           for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
             if [ -d "generated/$project" ]; then
               echo "Checking formatting of $project..."
-              (cd "generated/$project" && cargo fmt --all -- --check)
+              (cd "generated/$project" && cargo fmt --all --check)
             fi
           done
       
