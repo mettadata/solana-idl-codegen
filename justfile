@@ -84,10 +84,10 @@ test-all: generate
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running unit tests..."
-    cargo test 
+    just test
     echo ""
     echo "Running integration tests..."
-    cargo test --test integration_tests -- --nocapture
+    just test-integration
     echo ""
     echo "✓ All tests passed!"
 

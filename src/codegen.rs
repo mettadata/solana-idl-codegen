@@ -540,8 +540,8 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
 }
 
 fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
-    let program_id = if let Some(_addr) = idl.get_address() {
-        format_ident!("crate::ID")
+    let program_id_expr = if let Some(_addr) = idl.get_address() {
+        quote! { crate::ID }
     } else {
         return Ok(TokenStream::new()); // Can't validate without program ID
     };
@@ -580,9 +580,9 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
                             account_info: &solana_program::account_info::AccountInfo,
                         ) -> Result<(), ValidationError> {
                             // Check owner
-                            if account_info.owner != &#program_id {
+                            if account_info.owner != &#program_id_expr {
                                 return Err(ValidationError::InvalidOwner {
-                                    expected: #program_id,
+                                    expected: #program_id_expr,
                                     actual: *account_info.owner,
                                 });
                             }
@@ -668,13 +668,13 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
                             pub fn validate_account_info(
                                 account_info: &solana_program::account_info::AccountInfo,
                             ) -> Result<(), ValidationError> {
-                                // Check owner
-                                if account_info.owner != &#program_id {
-                                    return Err(ValidationError::InvalidOwner {
-                                        expected: #program_id,
-                                        actual: *account_info.owner,
-                                    });
-                                }
+                            // Check owner
+                            if account_info.owner != &#program_id_expr {
+                                return Err(ValidationError::InvalidOwner {
+                                    expected: #program_id_expr,
+                                    actual: *account_info.owner,
+                                });
+                            }
 
                                 // Check discriminator
                                 let data = account_info.data.borrow();
@@ -3117,5 +3117,210 @@ mod tests {
 
         // Check that deserialization uses &mut buf
         assert!(result_str.contains("deserialize (& mut buf)"));
+    }
+
+    // ============================================================================
+    // Event Parsing Helpers Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_event_parsing_helpers_empty() {
+        let events = vec![];
+        let result = generate_event_parsing_helpers(&events).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_generate_event_parsing_helpers_with_events() {
+        let events = vec![
+            Event {
+                name: "CreateEvent".to_string(),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                fields: Some(vec![EventField {
+                    name: "mint".to_string(),
+                    ty: IdlType::Simple("pubkey".to_string()),
+                    index: false,
+                }]),
+            },
+            Event {
+                name: "TradeEvent".to_string(),
+                discriminator: Some(vec![9, 10, 11, 12, 13, 14, 15, 16]),
+                fields: Some(vec![EventField {
+                    name: "amount".to_string(),
+                    ty: IdlType::Simple("u64".to_string()),
+                    index: false,
+                }]),
+            },
+        ];
+
+        let result = generate_event_parsing_helpers(&events).unwrap();
+        let result_str = result.to_string();
+
+        // Check for ParsedEvent enum
+        assert!(result_str.contains("enum ParsedEvent"));
+        assert!(result_str.contains("CreateEvent") && result_str.contains("CreateEventEvent"));
+        assert!(result_str.contains("TradeEvent") && result_str.contains("TradeEventEvent"));
+
+        // Check for EventParseError
+        assert!(result_str.contains("enum EventParseError"));
+        assert!(result_str.contains("DataTooShort"));
+        assert!(result_str.contains("UnknownDiscriminator"));
+        assert!(result_str.contains("DeserializationError"));
+
+        // Check for parse_event function
+        assert!(result_str.contains("fn parse_event"));
+        assert!(result_str.contains("parse_events_from_data"));
+
+        // Check for discriminator matching
+        assert!(result_str.contains("CREATE_EVENT_EVENT_DISCM"));
+        assert!(result_str.contains("TRADE_EVENT_EVENT_DISCM"));
+    }
+
+    #[test]
+    fn test_generate_event_parsing_helpers_no_discriminators() {
+        let events = vec![Event {
+            name: "NoDiscEvent".to_string(),
+            discriminator: None,
+            fields: Some(vec![EventField {
+                name: "data".to_string(),
+                ty: IdlType::Simple("u64".to_string()),
+                index: false,
+            }]),
+        }];
+
+        let result = generate_event_parsing_helpers(&events).unwrap();
+        assert!(result.is_empty(), "Events without discriminators should not generate helpers");
+    }
+
+    // ============================================================================
+    // Account Validation Helpers Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_account_validation_helpers_no_program_id() {
+        let idl = Idl {
+            address: None,
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: Some(vec![Account {
+                name: "TestAccount".to_string(),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                docs: None,
+                ty: Some(TypeDefType::Struct {
+                    fields: StructFields::Named(vec![]),
+                }),
+            }]),
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate_account_validation_helpers(&idl).unwrap();
+        assert!(result.is_empty(), "Should not generate helpers without program ID");
+    }
+
+    #[test]
+    fn test_generate_account_validation_helpers_with_program_id() {
+        let idl = Idl {
+            address: Some("11111111111111111111111111111111".to_string()),
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: Some(vec![Account {
+                name: "TestAccount".to_string(),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                docs: None,
+                ty: Some(TypeDefType::Struct {
+                    fields: StructFields::Named(vec![Field {
+                        name: "value".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    }]),
+                }),
+            }]),
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate_account_validation_helpers(&idl).unwrap();
+        let result_str = result.to_string();
+
+        // Check for ValidationError enum
+        assert!(result_str.contains("enum ValidationError"));
+        assert!(result_str.contains("InvalidOwner"));
+        assert!(result_str.contains("DataTooShort"));
+        assert!(result_str.contains("InvalidDiscriminator"));
+        assert!(result_str.contains("DeserializationError"));
+
+        // Check for validation methods
+        assert!(result_str.contains("impl TestAccount"));
+        assert!(result_str.contains("fn validate_account_info"));
+        assert!(result_str.contains("fn try_from_account_info"));
+        assert!(result_str.contains("ID") || result_str.contains("crate :: ID"));
+    }
+
+    #[test]
+    fn test_generate_account_validation_helpers_new_format() {
+        let idl = Idl {
+            address: Some("11111111111111111111111111111111".to_string()),
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: Some(vec![Account {
+                name: "PoolState".to_string(),
+                discriminator: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
+                docs: None,
+                ty: None, // New format - references type
+            }]),
+            types: Some(vec![TypeDef {
+                name: "PoolState".to_string(),
+                docs: None,
+                ty: TypeDefType::Struct {
+                    fields: StructFields::Named(vec![Field {
+                        name: "amount".to_string(),
+                        ty: IdlType::Simple("u64".to_string()),
+                        docs: None,
+                    }]),
+                },
+                serialization: None,
+                repr: None,
+            }]),
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate_account_validation_helpers(&idl).unwrap();
+        let result_str = result.to_string();
+
+        // Should generate validation for PoolState type
+        assert!(result_str.contains("impl PoolState"));
+        assert!(result_str.contains("fn validate_account_info"));
+    }
+
+    #[test]
+    fn test_generate_account_validation_helpers_empty_accounts() {
+        let idl = Idl {
+            address: Some("11111111111111111111111111111111".to_string()),
+            version: None,
+            name: None,
+            metadata: None,
+            instructions: vec![],
+            accounts: Some(vec![]),
+            types: None,
+            errors: None,
+            events: None,
+            constants: None,
+        };
+
+        let result = generate_account_validation_helpers(&idl).unwrap();
+        assert!(result.is_empty(), "Should not generate helpers for empty accounts");
     }
 }

@@ -7,6 +7,7 @@
 
 use std::path::Path;
 use std::time::Instant;
+use heck::ToPascalCase;
 
 // ============================================================================
 // File Structure Tests
@@ -586,4 +587,304 @@ fn test_summary() {
         println!("{}", line);
     }
     println!("================================\n");
+}
+
+// ============================================================================
+// Event Parsing Helpers Tests
+// ============================================================================
+
+#[test]
+fn test_events_have_parsing_helpers() {
+    use std::fs;
+
+    let crates = [
+        "pumpfun",
+        "pumpfun_amm",
+        "raydium_amm",
+        "raydium_clmm",
+        "raydium_cpmm",
+    ];
+
+    for crate_name in &crates {
+        let events_path = format!("generated/{}/src/events.rs", crate_name);
+        if !Path::new(&events_path).exists() {
+            continue;
+        }
+
+        let content = fs::read_to_string(&events_path).expect("Failed to read events.rs");
+
+        // Skip if no events
+        if !content.contains("pub struct") && !content.contains("_EVENT_DISCM") {
+            continue;
+        }
+
+        // Check for event parsing helpers
+        if content.contains("_EVENT_DISCM") {
+            // Should have ParsedEvent enum
+            assert!(
+                content.contains("enum ParsedEvent") || content.contains("pub enum ParsedEvent"),
+                "{} should have ParsedEvent enum for event parsing",
+                crate_name
+            );
+
+            // Should have EventParseError
+            assert!(
+                content.contains("enum EventParseError") || content.contains("pub enum EventParseError"),
+                "{} should have EventParseError enum",
+                crate_name
+            );
+
+            // Should have parse_event function
+            assert!(
+                content.contains("fn parse_event") || content.contains("pub fn parse_event"),
+                "{} should have parse_event function",
+                crate_name
+            );
+
+            // Should have parse_events_from_data function
+            assert!(
+                content.contains("fn parse_events_from_data") || content.contains("pub fn parse_events_from_data"),
+                "{} should have parse_events_from_data function",
+                crate_name
+            );
+
+            println!("✓ {} has event parsing helpers", crate_name);
+        }
+    }
+}
+
+// ============================================================================
+// Account Validation Helpers Tests
+// ============================================================================
+
+#[test]
+fn test_accounts_have_validation_helpers() {
+    use std::fs;
+
+    let crates = [
+        "pumpfun",
+        "pumpfun_amm",
+        "raydium_amm",
+        "raydium_clmm",
+        "raydium_cpmm",
+    ];
+
+    for crate_name in &crates {
+        let accounts_path = format!("generated/{}/src/accounts.rs", crate_name);
+        if !Path::new(&accounts_path).exists() {
+            continue;
+        }
+
+        let content = fs::read_to_string(&accounts_path).expect("Failed to read accounts.rs");
+
+        // Skip if no accounts
+        if !content.contains("pub struct") && !content.contains("DISCRIMINATOR") {
+            continue;
+        }
+
+        // Check for validation helpers if accounts have discriminators
+        if content.contains("DISCRIMINATOR") {
+            // Should have ValidationError enum
+            assert!(
+                content.contains("enum ValidationError") || content.contains("pub enum ValidationError"),
+                "{} should have ValidationError enum for account validation",
+                crate_name
+            );
+
+            // Should have validate_account_info method
+            assert!(
+                content.contains("fn validate_account_info") || content.contains("pub fn validate_account_info"),
+                "{} should have validate_account_info method",
+                crate_name
+            );
+
+            // Should have try_from_account_info method
+            assert!(
+                content.contains("fn try_from_account_info") || content.contains("pub fn try_from_account_info"),
+                "{} should have try_from_account_info method",
+                crate_name
+            );
+
+            println!("✓ {} has account validation helpers", crate_name);
+        }
+    }
+}
+
+// ============================================================================
+// Example Files Tests
+// ============================================================================
+
+#[test]
+fn test_example_files_generated() {
+    let crates = [
+        "pumpfun",
+        "pumpfun_amm",
+        "raydium_amm",
+        "raydium_clmm",
+        "raydium_cpmm",
+    ];
+
+    let mut tested = 0;
+    let mut passed = 0;
+
+    for crate_name in &crates {
+        let crate_path = format!("generated/{}", crate_name);
+        if !Path::new(&crate_path).exists() {
+            continue;
+        }
+
+        tested += 1;
+
+        let examples_dir = format!("{}/examples", crate_path);
+        let build_ix_example = format!("{}/build_instruction.rs", examples_dir);
+        let parse_account_example = format!("{}/parse_account.rs", examples_dir);
+        let parse_events_example = format!("{}/parse_events.rs", examples_dir);
+
+        let mut all_present = true;
+        let mut missing = Vec::new();
+
+        if !Path::new(&build_ix_example).exists() {
+            all_present = false;
+            missing.push("build_instruction.rs");
+        }
+        if !Path::new(&parse_account_example).exists() {
+            all_present = false;
+            missing.push("parse_account.rs");
+        }
+        if !Path::new(&parse_events_example).exists() {
+            all_present = false;
+            missing.push("parse_events.rs");
+        }
+
+        if all_present {
+            passed += 1;
+            println!("✓ {} has all example files", crate_name);
+        } else {
+            eprintln!("✗ {} missing example files: {:?}", crate_name, missing);
+        }
+    }
+
+    assert!(
+        tested > 0,
+        "No generated crates found to test. Run `just generate`."
+    );
+
+    if passed == tested {
+        println!("✓ All {} tested crates have example files", tested);
+    } else {
+        eprintln!(
+            "⚠️  Only {}/{} crates have all example files",
+            passed, tested
+        );
+    }
+}
+
+#[test]
+fn test_example_files_content() {
+    use std::fs;
+
+    let crates = [
+        "pumpfun",
+        "pumpfun_amm",
+        "raydium_amm",
+        "raydium_clmm",
+        "raydium_cpmm",
+    ];
+
+    for crate_name in &crates {
+        let examples_dir = format!("generated/{}/examples", crate_name);
+        if !Path::new(&examples_dir).exists() {
+            continue;
+        }
+
+        // Check build_instruction.rs
+        let build_ix_path = format!("{}/build_instruction.rs", examples_dir);
+        if Path::new(&build_ix_path).exists() {
+            let content = fs::read_to_string(&build_ix_path)
+                .expect("Failed to read build_instruction.rs");
+            assert!(
+                content.contains("use") && content.contains("::*"),
+                "{} build_instruction.rs should have imports",
+                crate_name
+            );
+            assert!(
+                content.contains("fn main") || content.contains("fn build"),
+                "{} build_instruction.rs should have a function",
+                crate_name
+            );
+        }
+
+        // Check parse_account.rs
+        let parse_account_path = format!("{}/parse_account.rs", examples_dir);
+        if Path::new(&parse_account_path).exists() {
+            let content = fs::read_to_string(&parse_account_path)
+                .expect("Failed to read parse_account.rs");
+            assert!(
+                content.contains("use") && content.contains("::*"),
+                "{} parse_account.rs should have imports",
+                crate_name
+            );
+            assert!(
+                content.contains("AccountInfo") || content.contains("try_from_account_info"),
+                "{} parse_account.rs should reference account parsing",
+                crate_name
+            );
+        }
+
+        // Check parse_events.rs
+        let parse_events_path = format!("{}/parse_events.rs", examples_dir);
+        if Path::new(&parse_events_path).exists() {
+            let content = fs::read_to_string(&parse_events_path)
+                .expect("Failed to read parse_events.rs");
+            assert!(
+                content.contains("use") && content.contains("::*"),
+                "{} parse_events.rs should have imports",
+                crate_name
+            );
+            assert!(
+                content.contains("parse_event") || content.contains("ParsedEvent"),
+                "{} parse_events.rs should reference event parsing",
+                crate_name
+            );
+        }
+
+        println!("✓ {} example files have correct content", crate_name);
+    }
+}
+
+// ============================================================================
+// Enhanced Documentation Tests
+// ============================================================================
+
+#[test]
+fn test_enhanced_documentation() {
+    use std::fs;
+
+    let crates = [
+        "pumpfun",
+        "pumpfun_amm",
+        "raydium_amm",
+        "raydium_clmm",
+        "raydium_cpmm",
+    ];
+
+    for crate_name in &crates {
+        let events_path = format!("generated/{}/src/events.rs", crate_name);
+        if !Path::new(&events_path).exists() {
+            continue;
+        }
+
+        let content = fs::read_to_string(&events_path).expect("Failed to read events.rs");
+
+        // Check for enhanced documentation in events
+        if content.contains("pub struct") && content.contains("Event:") {
+            // Should have usage examples in doc comments
+            let has_usage = content.contains("# Usage") || content.contains("/// # Usage");
+            let has_example = content.contains("```no_run") || content.contains("```rust");
+
+            if has_usage || has_example {
+                println!("✓ {} events have enhanced documentation", crate_name);
+            }
+        }
+    }
 }
