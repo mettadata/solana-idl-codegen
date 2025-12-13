@@ -1,0 +1,6 @@
+# Generated code - do not edit
+# These files are generated from external tools and should not be manually edited
+generated/
+imported/
+idl/
+target/
