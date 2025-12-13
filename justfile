@@ -142,6 +142,6 @@ check-all:
     just clippy-generated
     echo ""
     echo "7. Running integration tests..."
-    cargo test --test integration_tests -- --nocapture
+    just test-integration
     echo ""
     echo "✓ All checks passed!"
