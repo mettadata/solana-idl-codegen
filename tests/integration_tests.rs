@@ -628,7 +628,8 @@ fn test_events_have_parsing_helpers() {
 
             // Should have EventParseError
             assert!(
-                content.contains("enum EventParseError") || content.contains("pub enum EventParseError"),
+                content.contains("enum EventParseError")
+                    || content.contains("pub enum EventParseError"),
                 "{} should have EventParseError enum",
                 crate_name
             );
@@ -642,7 +643,8 @@ fn test_events_have_parsing_helpers() {
 
             // Should have parse_events_from_data function
             assert!(
-                content.contains("fn parse_events_from_data") || content.contains("pub fn parse_events_from_data"),
+                content.contains("fn parse_events_from_data")
+                    || content.contains("pub fn parse_events_from_data"),
                 "{} should have parse_events_from_data function",
                 crate_name
             );
@@ -685,21 +687,24 @@ fn test_accounts_have_validation_helpers() {
         if content.contains("DISCRIMINATOR") {
             // Should have ValidationError enum
             assert!(
-                content.contains("enum ValidationError") || content.contains("pub enum ValidationError"),
+                content.contains("enum ValidationError")
+                    || content.contains("pub enum ValidationError"),
                 "{} should have ValidationError enum for account validation",
                 crate_name
             );
 
             // Should have validate_account_info method
             assert!(
-                content.contains("fn validate_account_info") || content.contains("pub fn validate_account_info"),
+                content.contains("fn validate_account_info")
+                    || content.contains("pub fn validate_account_info"),
                 "{} should have validate_account_info method",
                 crate_name
             );
 
             // Should have try_from_account_info method
             assert!(
-                content.contains("fn try_from_account_info") || content.contains("pub fn try_from_account_info"),
+                content.contains("fn try_from_account_info")
+                    || content.contains("pub fn try_from_account_info"),
                 "{} should have try_from_account_info method",
                 crate_name
             );
@@ -799,8 +804,8 @@ fn test_example_files_content() {
         // Check build_instruction.rs
         let build_ix_path = format!("{}/build_instruction.rs", examples_dir);
         if Path::new(&build_ix_path).exists() {
-            let content = fs::read_to_string(&build_ix_path)
-                .expect("Failed to read build_instruction.rs");
+            let content =
+                fs::read_to_string(&build_ix_path).expect("Failed to read build_instruction.rs");
             assert!(
                 content.contains("use") && content.contains("::*"),
                 "{} build_instruction.rs should have imports",
@@ -816,8 +821,8 @@ fn test_example_files_content() {
         // Check parse_account.rs
         let parse_account_path = format!("{}/parse_account.rs", examples_dir);
         if Path::new(&parse_account_path).exists() {
-            let content = fs::read_to_string(&parse_account_path)
-                .expect("Failed to read parse_account.rs");
+            let content =
+                fs::read_to_string(&parse_account_path).expect("Failed to read parse_account.rs");
             assert!(
                 content.contains("use") && content.contains("::*"),
                 "{} parse_account.rs should have imports",
@@ -833,8 +838,8 @@ fn test_example_files_content() {
         // Check parse_events.rs
         let parse_events_path = format!("{}/parse_events.rs", examples_dir);
         if Path::new(&parse_events_path).exists() {
-            let content = fs::read_to_string(&parse_events_path)
-                .expect("Failed to read parse_events.rs");
+            let content =
+                fs::read_to_string(&parse_events_path).expect("Failed to read parse_events.rs");
             assert!(
                 content.contains("use") && content.contains("::*"),
                 "{} parse_events.rs should have imports",

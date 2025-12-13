@@ -557,10 +557,10 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
             if account.discriminator.is_some() || account.ty.is_some() {
                 let name = format_ident!("{}", account.name);
                 let docs = generate_docs(account.docs.as_ref());
-                
+
                 // Track that we've processed this account
                 processed_accounts.insert(account.name.clone());
-                
+
                 account_validations.push(quote! {
                     #docs
                     impl #name {
@@ -1189,7 +1189,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
 
     // Generate data struct with enhanced documentation
     let enhanced_docs = format!("Event: {}\n///\n/// # Usage\n/// ```no_run\n/// use crate::events::*;\n///\n/// // Parse event from transaction data\n/// let event = parse_event(&event_data)?;\n/// match event {{\n///     ParsedEvent::{}(e) => println!(\"Event: {{:?}}\", e),\n///     _ => {{}}\n/// }}\n/// ```", event.name, event.name.to_pascal_case());
-    
+
     tokens.extend(quote! {
         #[doc = #enhanced_docs]
         #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
@@ -1251,7 +1251,8 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
         if event.discriminator.is_some() {
             let wrapper_name = format_ident!("{}Event", event.name);
             let variant_name = format_ident!("{}", event.name.to_pascal_case());
-            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+            let discm_const =
+                format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
 
             event_variants.push(quote! {
                 #variant_name(#wrapper_name)
@@ -3141,7 +3142,10 @@ mod tests {
         }];
 
         let result = generate_event_parsing_helpers(&events).unwrap();
-        assert!(result.is_empty(), "Events without discriminators should not generate helpers");
+        assert!(
+            result.is_empty(),
+            "Events without discriminators should not generate helpers"
+        );
     }
 
     // ============================================================================
@@ -3171,7 +3175,10 @@ mod tests {
         };
 
         let result = generate_account_validation_helpers(&idl).unwrap();
-        assert!(result.is_empty(), "Should not generate helpers without program ID");
+        assert!(
+            result.is_empty(),
+            "Should not generate helpers without program ID"
+        );
     }
 
     #[test]
@@ -3273,6 +3280,9 @@ mod tests {
         };
 
         let result = generate_account_validation_helpers(&idl).unwrap();
-        assert!(result.is_empty(), "Should not generate helpers for empty accounts");
+        assert!(
+            result.is_empty(),
+            "Should not generate helpers for empty accounts"
+        );
     }
 }

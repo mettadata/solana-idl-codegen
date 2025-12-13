@@ -352,8 +352,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     };
 
     let build_ix_file = examples_dir.join("build_instruction.rs");
-    fs::write(&build_ix_file, build_instruction_example)
-        .context(format!("Failed to write build_instruction.rs: {:?}", build_ix_file))?;
+    fs::write(&build_ix_file, build_instruction_example).context(format!(
+        "Failed to write build_instruction.rs: {:?}",
+        build_ix_file
+    ))?;
 
     // Example 2: Parsing an account
     let parse_account_example = if let Some(accounts) = &idl.accounts {
@@ -375,9 +377,7 @@ fn parse_account_example(account_info: &AccountInfo) -> Result<(), Box<dyn std::
     Ok(())
 }}
 "#,
-                module_name,
-                first_account.name,
-                first_account.name
+                module_name, first_account.name, first_account.name
             )
         } else {
             format!(
@@ -415,8 +415,10 @@ fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std:
     };
 
     let parse_account_file = examples_dir.join("parse_account.rs");
-    fs::write(&parse_account_file, parse_account_example)
-        .context(format!("Failed to write parse_account.rs: {:?}", parse_account_file))?;
+    fs::write(&parse_account_file, parse_account_example).context(format!(
+        "Failed to write parse_account.rs: {:?}",
+        parse_account_file
+    ))?;
 
     // Example 3: Parsing events
     let parse_events_example = if let Some(events) = &idl.events {
@@ -449,8 +451,7 @@ fn parse_events_example(event_data: &[u8]) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }}
 "#,
-                module_name,
-                match_arms
+                module_name, match_arms
             )
         } else {
             format!(
@@ -486,8 +487,10 @@ fn parse_events_example(_event_data: &[u8]) -> Result<(), Box<dyn std::error::Er
     };
 
     let parse_events_file = examples_dir.join("parse_events.rs");
-    fs::write(&parse_events_file, parse_events_example)
-        .context(format!("Failed to write parse_events.rs: {:?}", parse_events_file))?;
+    fs::write(&parse_events_file, parse_events_example).context(format!(
+        "Failed to write parse_events.rs: {:?}",
+        parse_events_file
+    ))?;
 
     Ok(())
 }
