@@ -339,7 +339,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
 {4}    // let instruction = {5}_ix(keys{6})?;
     // println!("Built instruction: {{:?}}", instruction);
 
-    println!("Instruction building example for {1} - replace with actual values");
+    println!("Example: building {1} instruction");
 
     Ok(())
 }}
