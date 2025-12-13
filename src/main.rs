@@ -133,6 +133,15 @@ fn main() -> Result<()> {
     fs::write(&gitignore_file, gitignore)
         .context(format!("Failed to write .gitignore: {:?}", gitignore_file))?;
 
+    // Generate example files
+    let examples_dir = crate_dir.join("examples");
+    fs::create_dir_all(&examples_dir).context(format!(
+        "Failed to create examples directory: {:?}",
+        examples_dir
+    ))?;
+
+    generate_examples(&examples_dir, &cli.module, &idl)?;
+
     // Format generated code with rustfmt
     let mut rustfmt_files = Vec::new();
     rustfmt_files.push(src_dir.join("lib.rs"));
@@ -172,6 +181,10 @@ fn main() -> Result<()> {
     println!("  ├── Cargo.toml");
     println!("  ├── README.md");
     println!("  ├── .gitignore");
+    println!("  ├── examples/");
+    println!("  │   ├── build_instruction.rs");
+    println!("  │   ├── parse_account.rs");
+    println!("  │   └── parse_events.rs");
     println!("  └── src/");
     println!("      ├── lib.rs");
     println!("      ├── types.rs");
@@ -273,4 +286,408 @@ MIT OR Apache-2.0
         module_name,
         module_name
     )
+}
+
+fn generate_examples(examples_dir: &PathBuf, module_name: &str, idl: &idl::Idl) -> Result<()> {
+    // Example 1: Building an instruction
+    let build_instruction_example = if !idl.instructions.is_empty() {
+        let first_ix = &idl.instructions[0];
+        let ix_name_snake = first_ix.name.to_snake_case();
+        let ix_name_pascal = first_ix.name.to_pascal_case();
+        format!(
+            r#"//! Example: Building an instruction
+//!
+//! This example shows how to build a transaction instruction using the generated bindings.
+
+use {}::*;
+use solana_program::pubkey::Pubkey;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {{
+    // Build {} instruction
+    let keys = {}Keys {{
+        // TODO: Fill in account pubkeys based on your IDL
+    }};
+    {}
+    let instruction = {}(keys{})?;
+    println!("Built instruction: {{:?}}", instruction);
+    
+    Ok(())
+}}
+"#,
+            module_name,
+            first_ix.name,
+            ix_name_pascal,
+            if !first_ix.args.is_empty() {
+                format!(
+                    "    let args = {}IxArgs {{\n        // TODO: Fill in instruction arguments\n    }};\n    ",
+                    ix_name_pascal
+                )
+            } else {
+                String::new()
+            },
+            ix_name_snake,
+            if !first_ix.args.is_empty() {
+                ", args"
+            } else {
+                ""
+            }
+        )
+    } else {
+        format!(
+            r#"//! Example: Building an instruction
+//!
+//! This example shows how to build a transaction instruction using the generated bindings.
+
+use {}::*;
+use solana_program::pubkey::Pubkey;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {{
+    // No instructions defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let build_ix_file = examples_dir.join("build_instruction.rs");
+    fs::write(&build_ix_file, build_instruction_example)
+        .context(format!("Failed to write build_instruction.rs: {:?}", build_ix_file))?;
+
+    // Example 2: Parsing an account
+    let parse_account_example = if let Some(accounts) = &idl.accounts {
+        if !accounts.is_empty() {
+            let first_account = &accounts[0];
+            format!(
+                r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // Parse and validate {} account
+    let account = {}::try_from_account_info(account_info)?;
+    println!("Parsed account: {{:?}}", account);
+    
+    Ok(())
+}}
+"#,
+                module_name,
+                first_account.name,
+                first_account.name
+            )
+        } else {
+            format!(
+                r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // No accounts defined in IDL
+    Ok(())
+}}
+"#,
+                module_name
+            )
+        }
+    } else {
+        format!(
+            r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // No accounts defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let parse_account_file = examples_dir.join("parse_account.rs");
+    fs::write(&parse_account_file, parse_account_example)
+        .context(format!("Failed to write parse_account.rs: {:?}", parse_account_file))?;
+
+    // Example 3: Parsing events
+    let parse_events_example = if let Some(events) = &idl.events {
+        if !events.is_empty() {
+            let mut match_arms = String::new();
+            for event in events.iter().take(3) {
+                let variant_name = event.name.to_pascal_case();
+                match_arms.push_str(&format!(
+                    "        Ok(ParsedEvent::{}(e)) => println!(\"Parsed {} event: {{:?}}\", e),\n        ",
+                    variant_name,
+                    event.name
+                ));
+            }
+            match_arms.push_str("_ => {}");
+            format!(
+                r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // Parse a single event
+    match parse_event(event_data) {{
+        {}
+        Err(e) => eprintln!("Failed to parse event: {{}}", e),
+    }}
+    
+    Ok(())
+}}
+"#,
+                module_name,
+                match_arms
+            )
+        } else {
+            format!(
+                r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(_event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // No events defined in IDL
+    Ok(())
+}}
+"#,
+                module_name
+            )
+        }
+    } else {
+        format!(
+            r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(_event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // No events defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let parse_events_file = examples_dir.join("parse_events.rs");
+    fs::write(&parse_events_file, parse_events_example)
+        .context(format!("Failed to write parse_events.rs: {:?}", parse_events_file))?;
+
+    Ok(())
+}
+
+fn generate_examples(examples_dir: &PathBuf, module_name: &str, idl: &idl::Idl) -> Result<()> {
+    // Example 1: Building an instruction
+    let build_instruction_example = if !idl.instructions.is_empty() {
+        let first_ix = &idl.instructions[0];
+        let ix_name_snake = first_ix.name.to_snake_case();
+        let ix_name_pascal = first_ix.name.to_pascal_case();
+        format!(
+            r#"//! Example: Building an instruction
+//!
+//! This example shows how to build a transaction instruction using the generated bindings.
+
+use {}::*;
+use solana_program::pubkey::Pubkey;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {{
+    // Build {} instruction
+    let keys = {}Keys {{
+        // TODO: Fill in account pubkeys based on your IDL
+    }};
+    {}
+    let instruction = {}(keys{})?;
+    println!("Built instruction: {{:?}}", instruction);
+    
+    Ok(())
+}}
+"#,
+            module_name,
+            first_ix.name,
+            ix_name_pascal,
+            if !first_ix.args.is_empty() {
+                format!(
+                    "    let args = {}IxArgs {{\n        // TODO: Fill in instruction arguments\n    }};\n    ",
+                    ix_name_pascal
+                )
+            } else {
+                String::new()
+            },
+            ix_name_snake,
+            if !first_ix.args.is_empty() {
+                ", args"
+            } else {
+                ""
+            }
+        )
+    } else {
+        format!(
+            r#"//! Example: Building an instruction
+//!
+//! This example shows how to build a transaction instruction using the generated bindings.
+
+use {}::*;
+use solana_program::pubkey::Pubkey;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {{
+    // No instructions defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let build_ix_file = examples_dir.join("build_instruction.rs");
+    fs::write(&build_ix_file, build_instruction_example)
+        .context(format!("Failed to write build_instruction.rs: {:?}", build_ix_file))?;
+
+    // Example 2: Parsing an account
+    let parse_account_example = if let Some(accounts) = &idl.accounts {
+        if !accounts.is_empty() {
+            let first_account = &accounts[0];
+            format!(
+                r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // Parse and validate {} account
+    let account = {}::try_from_account_info(account_info)?;
+    println!("Parsed account: {{:?}}", account);
+    
+    Ok(())
+}}
+"#,
+                module_name,
+                first_account.name,
+                first_account.name
+            )
+        } else {
+            format!(
+                r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // No accounts defined in IDL
+    Ok(())
+}}
+"#,
+                module_name
+            )
+        }
+    } else {
+        format!(
+            r#"//! Example: Parsing and validating an account
+//!
+//! This example shows how to parse and validate account data using the generated bindings.
+
+use {}::*;
+use solana_program::account_info::AccountInfo;
+
+fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std::error::Error>> {{
+    // No accounts defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let parse_account_file = examples_dir.join("parse_account.rs");
+    fs::write(&parse_account_file, parse_account_example)
+        .context(format!("Failed to write parse_account.rs: {:?}", parse_account_file))?;
+
+    // Example 3: Parsing events
+    let parse_events_example = if let Some(events) = &idl.events {
+        if !events.is_empty() {
+            let mut match_arms = String::new();
+            for event in events.iter().take(3) {
+                let variant_name = event.name.to_pascal_case();
+                match_arms.push_str(&format!(
+                    "        Ok(ParsedEvent::{}(e)) => println!(\"Parsed {} event: {{:?}}\", e),\n        ",
+                    variant_name,
+                    event.name
+                ));
+            }
+            match_arms.push_str("_ => {}");
+            format!(
+                r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // Parse a single event
+    match parse_event(event_data) {{
+        {}
+        Err(e) => eprintln!("Failed to parse event: {{}}", e),
+    }}
+    
+    Ok(())
+}}
+"#,
+                module_name,
+                match_arms
+            )
+        } else {
+            format!(
+                r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(_event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // No events defined in IDL
+    Ok(())
+}}
+"#,
+                module_name
+            )
+        }
+    } else {
+        format!(
+            r#"//! Example: Parsing events from transaction logs
+//!
+//! This example shows how to parse events from transaction data using the generated bindings.
+
+use {}::*;
+
+fn parse_events_example(_event_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {{
+    // No events defined in IDL
+    Ok(())
+}}
+"#,
+            module_name
+        )
+    };
+
+    let parse_events_file = examples_dir.join("parse_events.rs");
+    fs::write(&parse_events_file, parse_events_example)
+        .context(format!("Failed to write parse_events.rs: {:?}", parse_events_file))?;
+
+    Ok(())
 }

@@ -136,6 +136,11 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
         }
     }
 
+    // Generate account validation helpers
+    if !accounts_tokens.is_empty() {
+        accounts_tokens.extend(generate_account_validation_helpers(&idl)?);
+    }
+
     // Generate instruction structs and enums
     let has_program_id = idl.get_address().is_some();
     instructions_tokens.extend(generate_instructions(&idl.instructions, has_program_id)?);
@@ -150,6 +155,8 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
         for event in events {
             events_tokens.extend(generate_event(event, &idl.types)?);
         }
+        // Generate event parsing helpers
+        events_tokens.extend(generate_event_parsing_helpers(events)?);
     }
 
     // Format each module with appropriate imports
@@ -530,6 +537,225 @@ fn generate_account(account: &Account) -> Result<TokenStream> {
         // Discriminators are added directly to the type definitions
         Ok(TokenStream::new())
     }
+}
+
+fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
+    let program_id = if let Some(_addr) = idl.get_address() {
+        format_ident!("crate::ID")
+    } else {
+        return Ok(TokenStream::new()); // Can't validate without program ID
+    };
+
+    // Collect all account types with discriminators
+    let mut account_validations = Vec::new();
+
+    // Check accounts from accounts array (old format)
+    if let Some(accounts) = &idl.accounts {
+        for account in accounts {
+            if account.discriminator.is_some() || account.ty.is_some() {
+                let name = format_ident!("{}", account.name);
+                let docs = generate_docs(account.docs.as_ref());
+                
+                account_validations.push(quote! {
+                    #docs
+                    impl #name {
+                        /// Validate that an AccountInfo matches this account type
+                        ///
+                        /// This function checks:
+                        /// - The account owner matches the program ID
+                        /// - The account data starts with the correct discriminator
+                        /// - The account data is long enough to contain the discriminator
+                        ///
+                        /// # Example
+                        /// ```no_run
+                        /// use solana_program::account_info::AccountInfo;
+                        /// use crate::accounts::*;
+                        ///
+                        /// fn validate_account(account_info: &AccountInfo) -> Result<(), ValidationError> {
+                        ///     #name::validate_account_info(account_info)?;
+                        ///     Ok(())
+                        /// }
+                        /// ```
+                        pub fn validate_account_info(
+                            account_info: &solana_program::account_info::AccountInfo,
+                        ) -> Result<(), ValidationError> {
+                            // Check owner
+                            if account_info.owner != &#program_id {
+                                return Err(ValidationError::InvalidOwner {
+                                    expected: #program_id,
+                                    actual: *account_info.owner,
+                                });
+                            }
+
+                            // Check discriminator
+                            let data = account_info.data.borrow();
+                            if data.len() < 8 {
+                                return Err(ValidationError::DataTooShort {
+                                    expected: 8,
+                                    actual: data.len(),
+                                });
+                            }
+
+                            if data[..8] != Self::DISCRIMINATOR {
+                                return Err(ValidationError::InvalidDiscriminator {
+                                    expected: Self::DISCRIMINATOR,
+                                    actual: <[u8; 8]>::try_from(&data[..8])
+                                        .map_err(|_| ValidationError::DataTooShort {
+                                            expected: 8,
+                                            actual: data.len(),
+                                        })?,
+                                });
+                            }
+
+                            Ok(())
+                        }
+
+                        /// Validate and deserialize an account from AccountInfo
+                        ///
+                        /// This is a convenience method that combines validation and deserialization.
+                        ///
+                        /// # Example
+                        /// ```no_run
+                        /// use solana_program::account_info::AccountInfo;
+                        /// use crate::accounts::*;
+                        ///
+                        /// fn load_account(account_info: &AccountInfo) -> Result<#name, ValidationError> {
+                        ///     #name::try_from_account_info(account_info)
+                        /// }
+                        /// ```
+                        pub fn try_from_account_info(
+                            account_info: &solana_program::account_info::AccountInfo,
+                        ) -> Result<Self, ValidationError> {
+                            Self::validate_account_info(account_info)?;
+                            let data = account_info.data.borrow();
+                            Self::try_from_slice_with_discriminator(&data)
+                                .map_err(|e| ValidationError::DeserializationError(e.to_string()))
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    // Check types that have discriminators (new format)
+    if let Some(types) = &idl.types {
+        for ty in types {
+            if let Some(accounts) = &idl.accounts {
+                if accounts.iter().any(|a| a.name == ty.name && a.discriminator.is_some()) {
+                    let name = format_ident!("{}", ty.name);
+                    let docs = generate_docs(ty.docs.as_ref());
+                    
+                    account_validations.push(quote! {
+                        #docs
+                        impl #name {
+                            /// Validate that an AccountInfo matches this account type
+                            ///
+                            /// This function checks:
+                            /// - The account owner matches the program ID
+                            /// - The account data starts with the correct discriminator
+                            /// - The account data is long enough to contain the discriminator
+                            ///
+                            /// # Example
+                            /// ```no_run
+                            /// use solana_program::account_info::AccountInfo;
+                            /// use crate::accounts::*;
+                            ///
+                            /// fn validate_account(account_info: &AccountInfo) -> Result<(), ValidationError> {
+                            ///     #name::validate_account_info(account_info)?;
+                            ///     Ok(())
+                            /// }
+                            /// ```
+                            pub fn validate_account_info(
+                                account_info: &solana_program::account_info::AccountInfo,
+                            ) -> Result<(), ValidationError> {
+                                // Check owner
+                                if account_info.owner != &#program_id {
+                                    return Err(ValidationError::InvalidOwner {
+                                        expected: #program_id,
+                                        actual: *account_info.owner,
+                                    });
+                                }
+
+                                // Check discriminator
+                                let data = account_info.data.borrow();
+                                if data.len() < 8 {
+                                    return Err(ValidationError::DataTooShort {
+                                        expected: 8,
+                                        actual: data.len(),
+                                    });
+                                }
+
+                                if data[..8] != Self::DISCRIMINATOR {
+                                    return Err(ValidationError::InvalidDiscriminator {
+                                        expected: Self::DISCRIMINATOR,
+                                        actual: <[u8; 8]>::try_from(&data[..8])
+                                            .map_err(|_| ValidationError::DataTooShort {
+                                                expected: 8,
+                                                actual: data.len(),
+                                            })?,
+                                    });
+                                }
+
+                                Ok(())
+                            }
+
+                            /// Validate and deserialize an account from AccountInfo
+                            ///
+                            /// This is a convenience method that combines validation and deserialization.
+                            ///
+                            /// # Example
+                            /// ```no_run
+                            /// use solana_program::account_info::AccountInfo;
+                            /// use crate::accounts::*;
+                            ///
+                            /// fn load_account(account_info: &AccountInfo) -> Result<#name, ValidationError> {
+                            ///     #name::try_from_account_info(account_info)
+                            /// }
+                            /// ```
+                            pub fn try_from_account_info(
+                                account_info: &solana_program::account_info::AccountInfo,
+                            ) -> Result<Self, ValidationError> {
+                                Self::validate_account_info(account_info)?;
+                                let data = account_info.data.borrow();
+                                Self::try_from_slice_with_discriminator(&data)
+                                    .map_err(|e| ValidationError::DeserializationError(e.to_string()))
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    if account_validations.is_empty() {
+        return Ok(TokenStream::new());
+    }
+
+    Ok(quote! {
+        /// Error type for account validation
+        #[derive(Debug, thiserror::Error)]
+        pub enum ValidationError {
+            #[error("Invalid account owner. Expected: {expected}, Actual: {actual}")]
+            InvalidOwner {
+                expected: solana_program::pubkey::Pubkey,
+                actual: solana_program::pubkey::Pubkey,
+            },
+            #[error("Account data too short. Expected at least {expected} bytes, got {actual}")]
+            DataTooShort {
+                expected: usize,
+                actual: usize,
+            },
+            #[error("Invalid discriminator. Expected: {expected:?}, Actual: {actual:?}")]
+            InvalidDiscriminator {
+                expected: [u8; 8],
+                actual: [u8; 8],
+            },
+            #[error("Deserialization error: {0}")]
+            DeserializationError(String),
+        }
+
+        #(#account_validations)*
+    })
 }
 
 fn generate_instructions(
@@ -1000,7 +1226,6 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
 
     let name = format_ident!("{}", event.name);
     let wrapper_name = format_ident!("{}Event", event.name);
-    let docs = format!("Event: {}", event.name);
 
     // Determine if we have fields to generate
     let field_tokens = if let Some(fields) = &event.fields {
@@ -1044,9 +1269,11 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
         });
     }
 
-    // Generate data struct
+    // Generate data struct with enhanced documentation
+    let enhanced_docs = format!("Event: {}\n///\n/// # Usage\n/// ```no_run\n/// use crate::events::*;\n///\n/// // Parse event from transaction data\n/// let event = parse_event(&event_data)?;\n/// match event {{\n///     ParsedEvent::{}(e) => println!(\"Event: {{:?}}\", e),\n///     _ => {{}}\n/// }}\n/// ```", event.name, event.name.to_pascal_case());
+    
     tokens.extend(quote! {
-        #[doc = #docs]
+        #[doc = #enhanced_docs]
         #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct #name {
@@ -1090,6 +1317,138 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
     }
 
     Ok(tokens)
+}
+
+fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
+    if events.is_empty() {
+        return Ok(TokenStream::new());
+    }
+
+    // Collect all events with discriminators
+    let mut event_variants = Vec::new();
+    let mut parse_arms = Vec::new();
+
+    for event in events {
+        if event.discriminator.is_some() {
+            let wrapper_name = format_ident!("{}Event", event.name);
+            let variant_name = format_ident!("{}", event.name.to_pascal_case());
+            let discm_const = format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+
+            event_variants.push(quote! {
+                #variant_name(#wrapper_name)
+            });
+
+            parse_arms.push(quote! {
+                #discm_const => {
+                    let mut data_slice = data;
+                    match #wrapper_name::deserialize(&mut data_slice) {
+                        Ok(event) => Ok(ParsedEvent::#variant_name(event)),
+                        Err(e) => Err(EventParseError::DeserializationError(format!("Failed to deserialize {}: {}", stringify!(#variant_name), e))),
+                    }
+                }
+            });
+        }
+    }
+
+    if event_variants.is_empty() {
+        return Ok(TokenStream::new());
+    }
+
+    Ok(quote! {
+        /// Enum representing all parsed events from this program
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum ParsedEvent {
+            #(#event_variants),*
+        }
+
+        /// Error type for event parsing
+        #[derive(Debug, thiserror::Error)]
+        pub enum EventParseError {
+            #[error("Data too short for discriminator")]
+            DataTooShort,
+            #[error("Unknown event discriminator: {0:?}")]
+            UnknownDiscriminator([u8; 8]),
+            #[error("Deserialization error: {0}")]
+            DeserializationError(String),
+        }
+
+        /// Parse an event from raw bytes (including discriminator)
+        ///
+        /// # Example
+        /// ```no_run
+        /// use crate::events::*;
+        ///
+        /// let event_data: &[u8] = /* event data from transaction log */;
+        /// match parse_event(event_data) {
+        ///     Ok(ParsedEvent::CreateEvent(event)) => {
+        ///         println!("Created: {:?}", event.0);
+        ///     }
+        ///     Ok(ParsedEvent::TradeEvent(event)) => {
+        ///         println!("Traded: {:?}", event.0);
+        ///     }
+        ///     Err(e) => eprintln!("Failed to parse event: {}", e),
+        /// }
+        /// ```
+        pub fn parse_event(data: &[u8]) -> Result<ParsedEvent, EventParseError> {
+            if data.len() < 8 {
+                return Err(EventParseError::DataTooShort);
+            }
+
+            let discm = <[u8; 8]>::try_from(&data[..8])
+                .map_err(|_| EventParseError::DataTooShort)?;
+
+            match discm {
+                #(#parse_arms),*
+                _ => Err(EventParseError::UnknownDiscriminator(discm)),
+            }
+        }
+
+        /// Parse events from raw transaction log data
+        ///
+        /// This function attempts to parse events from a slice of raw bytes.
+        /// For Solana transaction logs, you typically need to:
+        /// 1. Extract program data from logs (often base64-encoded)
+        /// 2. Decode the base64 data
+        /// 3. Call this function with the decoded bytes
+        ///
+        /// # Example
+        /// ```no_run
+        /// use crate::events::*;
+        ///
+        /// // From transaction logs, extract and decode program data
+        /// // let decoded_data: Vec<u8> = /* decode base64 from logs */;
+        /// // let events = parse_events_from_data(&decoded_data)?;
+        ///
+        /// // Or parse a single event
+        /// // let event = parse_event(&decoded_data)?;
+        /// ```
+        pub fn parse_events_from_data(data: &[u8]) -> Vec<Result<ParsedEvent, EventParseError>> {
+            let mut events = Vec::new();
+            let mut offset = 0;
+
+            while offset < data.len() {
+                if data.len() - offset < 8 {
+                    break;
+                }
+
+                match parse_event(&data[offset..]) {
+                    Ok(event) => {
+                        // Try to determine event size for next iteration
+                        // This is approximate - actual size depends on event structure
+                        let event_size = 8 + 64; // discriminator + estimated data size
+                        events.push(Ok(event));
+                        offset += event_size.min(data.len() - offset);
+                    }
+                    Err(e) => {
+                        events.push(Err(e));
+                        break;
+                    }
+                }
+            }
+
+            events
+        }
+    })
 }
 
 fn map_idl_type(ty: &IdlType) -> TokenStream {
