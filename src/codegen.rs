@@ -179,19 +179,22 @@ fn format_module(tokens: TokenStream, imports: &[&str], module_type: &str) -> Re
     }
 
     // Build import statements based on what this module needs
+    // Sort imports alphabetically for rustfmt compliance
     let mut import_tokens = TokenStream::new();
-    for module in imports {
-        match *module {
-            "types" => {
-                import_tokens.extend(quote! {
-                    #[allow(unused_imports)]
-                    use crate::types::*;
-                });
-            }
+    let mut sorted_imports: Vec<&str> = imports.to_vec();
+    sorted_imports.sort();
+    for module in sorted_imports {
+        match module {
             "accounts" => {
                 import_tokens.extend(quote! {
                     #[allow(unused_imports)]
                     use crate::accounts::*;
+                });
+            }
+            "types" => {
+                import_tokens.extend(quote! {
+                    #[allow(unused_imports)]
+                    use crate::types::*;
                 });
             }
             _ => {}
@@ -210,18 +213,19 @@ fn format_module(tokens: TokenStream, imports: &[&str], module_type: &str) -> Re
                 use borsh::{BorshDeserialize, BorshSerialize};
                 #[allow(unused_imports)]
                 use bytemuck::{Pod, Zeroable};
-                use solana_program::pubkey::Pubkey;
                 #[allow(unused_imports)]
                 use solana_program::instruction::AccountMeta;
+                use solana_program::pubkey::Pubkey;
             }
         }
     };
 
     // Format the code with common imports
+    // Note: crate:: imports should come before external imports for rustfmt
     let code = quote! {
-        #common_imports
-
         #import_tokens
+
+        #common_imports
 
         #[allow(clippy::all)]
         #[allow(dead_code)]
@@ -254,15 +258,6 @@ fn generate_lib_module(idl: &Idl) -> String {
         "// Program ID not specified in IDL\n// solana_program::declare_id!(\"YourProgramIdHere\");\n\n".to_string()
     };
 
-    // Check if there are errors to conditionally generate re-exports
-    let has_errors = idl.errors.as_ref().is_some_and(|e| !e.is_empty());
-
-    let errors_reexport = if has_errors {
-        "pub use errors::*;\n"
-    } else {
-        ""
-    };
-
     // Note: We don't re-export events::* to avoid ambiguous glob re-exports
     // since events are often also defined in types. Users can access events
     // via the events module directly (e.g., crate::events::EventName)
@@ -270,17 +265,18 @@ fn generate_lib_module(idl: &Idl) -> String {
     format!(
         r#"//! Generated Solana program bindings
 
-{}pub mod types;
-pub mod accounts;
-pub mod instructions;
+{}pub mod accounts;
 pub mod errors;
 pub mod events;
+pub mod instructions;
+pub mod types;
 
 // Re-export commonly used types
-pub use types::*;
 pub use accounts::*;
+pub use errors::*;
 pub use instructions::*;
-{}
+pub use types::*;
+
 // Helper function for serde serialization of Pubkey as string
 #[cfg(feature = "serde")]
 pub fn serialize_pubkey_as_string<S>(
@@ -293,7 +289,7 @@ where
     serializer.serialize_str(&pubkey.to_string())
 }}
 "#,
-        program_id_declaration, errors_reexport
+        program_id_declaration
     )
 }
 
@@ -1084,7 +1080,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
                             format!(
                                 "discm does not match. Expected: {:?}. Received: {:?}",
                                 #discm_const, maybe_discm
-                            )
+                            ),
                         ));
                     }
                     Ok(Self(#name::deserialize(buf)?))

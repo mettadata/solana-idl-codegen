@@ -133,6 +133,44 @@ fn main() -> Result<()> {
     fs::write(&gitignore_file, gitignore)
         .context(format!("Failed to write .gitignore: {:?}", gitignore_file))?;
 
+    // Format generated code with rustfmt
+    let mut rustfmt_files = Vec::new();
+    rustfmt_files.push(src_dir.join("lib.rs"));
+    rustfmt_files.push(src_dir.join("instructions.rs"));
+    if !generated_code.types.is_empty() {
+        rustfmt_files.push(src_dir.join("types.rs"));
+    }
+    if !generated_code.accounts.is_empty() {
+        rustfmt_files.push(src_dir.join("accounts.rs"));
+    }
+    if !generated_code.errors.is_empty() {
+        rustfmt_files.push(src_dir.join("errors.rs"));
+    }
+    if !generated_code.events.is_empty() {
+        rustfmt_files.push(src_dir.join("events.rs"));
+    }
+
+    let rustfmt_args: Vec<&str> = rustfmt_files
+        .iter()
+        .filter_map(|p| p.to_str())
+        .collect();
+
+    if !rustfmt_args.is_empty() {
+        let rustfmt_result = std::process::Command::new("rustfmt")
+            .arg("--edition")
+            .arg("2021")
+            .args(&rustfmt_args)
+            .output();
+
+        if let Err(e) = rustfmt_result {
+            eprintln!("Warning: Failed to run rustfmt: {}. Generated code may not be formatted correctly.", e);
+        } else if let Ok(output) = rustfmt_result {
+            if !output.status.success() {
+                eprintln!("Warning: rustfmt exited with non-zero status. Generated code may not be formatted correctly.");
+            }
+        }
+    }
+
     println!("\n✓ Generated crate at: {:?}", crate_dir);
     println!("  ├── Cargo.toml");
     println!("  ├── README.md");
