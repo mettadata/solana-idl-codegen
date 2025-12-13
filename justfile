@@ -33,14 +33,14 @@ fmt-generated:
         fi
     done
 
-# Run cargo clippy on all generated crates
+# Run cargo clippy on all generated crates (excluding examples which are templates)
 clippy-generated:
     #!/usr/bin/env bash
     set -euo pipefail
     for project in {{projects}}; do
         if [ -d "generated/$project" ]; then
             echo "Checking $project with clippy..."
-            (cd "generated/$project" && cargo clippy --all --all-targets --all-features -- --deny warnings)
+            (cd "generated/$project" && cargo clippy --lib --bins --all-features -- --deny warnings)
         fi
     done
 

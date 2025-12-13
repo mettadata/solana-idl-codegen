@@ -138,7 +138,7 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
 
     // Generate account validation helpers
     if !accounts_tokens.is_empty() {
-        accounts_tokens.extend(generate_account_validation_helpers(&idl)?);
+        accounts_tokens.extend(generate_account_validation_helpers(idl)?);
     }
 
     // Generate instruction structs and enums

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use solana_idl_codegen::{codegen, idl};
 
@@ -289,7 +289,7 @@ MIT OR Apache-2.0
     )
 }
 
-fn generate_examples(examples_dir: &PathBuf, module_name: &str, idl: &idl::Idl) -> Result<()> {
+fn generate_examples(examples_dir: &Path, module_name: &str, idl: &idl::Idl) -> Result<()> {
     // Example 1: Building an instruction
     let build_instruction_example = if !idl.instructions.is_empty() {
         let first_ix = &idl.instructions[0];
@@ -308,10 +308,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     let keys = {}Keys {{
         // TODO: Fill in account pubkeys based on your IDL
     }};
-    {}
+{}
     let instruction = {}(keys{})?;
     println!("Built instruction: {{:?}}", instruction);
-    
+
     Ok(())
 }}
 "#,
@@ -320,7 +320,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
             ix_name_pascal,
             if !first_ix.args.is_empty() {
                 format!(
-                    "    let args = {}IxArgs {{\n        // TODO: Fill in instruction arguments\n    }};\n    ",
+                    "    let args = {}IxArgs {{\n        // TODO: Fill in instruction arguments\n    }};\n",
                     ix_name_pascal
                 )
             } else {
@@ -373,7 +373,7 @@ fn parse_account_example(account_info: &AccountInfo) -> Result<(), Box<dyn std::
     // Parse and validate {} account
     let account = {}::try_from_account_info(account_info)?;
     println!("Parsed account: {{:?}}", account);
-    
+
     Ok(())
 }}
 "#,
@@ -427,13 +427,13 @@ fn parse_account_example(_account_info: &AccountInfo) -> Result<(), Box<dyn std:
             for event in events.iter().take(3) {
                 let variant_name = event.name.to_pascal_case();
                 match_arms.push_str(&format!(
-                    "        Ok(ParsedEvent::{}(e)) => println!(\"Parsed {} event: {{:?}}\", e),\n        ",
+                    "Ok(ParsedEvent::{}(e)) => {{\n            println!(\"Parsed {} event: {{:?}}\", e)\n        }}\n        ",
                     variant_name,
                     event.name
                 ));
             }
             // Add catch-all for unhandled Ok variants (before Err arm)
-            match_arms.push_str("Ok(_) => println!(\"Parsed other event variant\"),\n        ");
+            match_arms.push_str("Ok(_) => println!(\"Parsed other event variant\"),\n");
             format!(
                 r#"//! Example: Parsing events from transaction logs
 //!
@@ -447,7 +447,7 @@ fn parse_events_example(event_data: &[u8]) -> Result<(), Box<dyn std::error::Err
         {}
         Err(e) => eprintln!("Failed to parse event: {{}}", e),
     }}
-    
+
     Ok(())
 }}
 "#,

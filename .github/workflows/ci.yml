@@ -157,15 +157,6 @@ jobs:
           cargo run --release -- -i idl/pump-public-docs/idl/pump.json -o generated -m pumpfun
           cargo run --release -- -i idl/pump-public-docs/idl/pump_amm.json -o generated -m pumpfun_amm
       
-      - name: Format generated code
-        run: |
-          for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
-            if [ -d "generated/$project" ]; then
-              echo "Formatting $project..."
-              (cd "generated/$project" && cargo fmt --all --check)
-            fi
-          done
-      
       - name: Check formatting of generated code
         run: |
           for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
@@ -175,12 +166,12 @@ jobs:
             fi
           done
       
-      - name: Run clippy on generated code
+      - name: Run clippy on generated code (excluding examples which are templates)
         run: |
           for project in raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm; do
             if [ -d "generated/$project" ]; then
               echo "Checking $project with clippy..."
-              (cd "generated/$project" && cargo clippy --all --all-targets --all-features -- --deny warnings)
+              (cd "generated/$project" && cargo clippy --lib --bins --all-features -- --deny warnings)
             fi
           done
 
