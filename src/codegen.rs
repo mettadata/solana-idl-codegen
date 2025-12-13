@@ -1327,6 +1327,7 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
     // Collect all events with discriminators
     let mut event_variants = Vec::new();
     let mut parse_arms = Vec::new();
+    let mut parse_arms_with_size = Vec::new();
 
     for event in events {
         if event.discriminator.is_some() {
@@ -1343,6 +1344,20 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
                     let mut data_slice = data;
                     match #wrapper_name::deserialize(&mut data_slice) {
                         Ok(event) => Ok(ParsedEvent::#variant_name(event)),
+                        Err(e) => Err(EventParseError::DeserializationError(format!("Failed to deserialize {}: {}", stringify!(#variant_name), e))),
+                    }
+                }
+            });
+
+            // Generate arms that track bytes consumed for parse_event_with_size
+            parse_arms_with_size.push(quote! {
+                #discm_const => {
+                    let initial_len = data_slice.len();
+                    match #wrapper_name::deserialize(&mut data_slice) {
+                        Ok(event) => {
+                            let bytes_consumed = initial_len - data_slice.len();
+                            Ok((ParsedEvent::#variant_name(event), bytes_consumed))
+                        }
                         Err(e) => Err(EventParseError::DeserializationError(format!("Failed to deserialize {}: {}", stringify!(#variant_name), e))),
                     }
                 }
@@ -1403,6 +1418,24 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
             }
         }
 
+        /// Helper function to parse an event and return the number of bytes consumed
+        fn parse_event_with_size(data: &[u8]) -> Result<(ParsedEvent, usize), EventParseError> {
+            if data.len() < 8 {
+                return Err(EventParseError::DataTooShort);
+            }
+
+            let discm = <[u8; 8]>::try_from(&data[..8])
+                .map_err(|_| EventParseError::DataTooShort)?;
+
+            // Create a mutable slice to track bytes consumed
+            let mut data_slice = data;
+
+            match discm {
+                #(#parse_arms_with_size),*
+                _ => Err(EventParseError::UnknownDiscriminator(discm)),
+            }
+        }
+
         /// Parse events from raw transaction log data
         ///
         /// This function attempts to parse events from a slice of raw bytes.
@@ -1410,6 +1443,10 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
         /// 1. Extract program data from logs (often base64-encoded)
         /// 2. Decode the base64 data
         /// 3. Call this function with the decoded bytes
+        ///
+        /// This function correctly handles events of varying sizes by tracking
+        /// the actual bytes consumed during deserialization, rather than using
+        /// hardcoded size estimates.
         ///
         /// # Example
         /// ```no_run
@@ -1431,13 +1468,10 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
                     break;
                 }
 
-                match parse_event(&data[offset..]) {
-                    Ok(event) => {
-                        // Try to determine event size for next iteration
-                        // This is approximate - actual size depends on event structure
-                        let event_size = 8 + 64; // discriminator + estimated data size
+                match parse_event_with_size(&data[offset..]) {
+                    Ok((event, bytes_consumed)) => {
                         events.push(Ok(event));
-                        offset += event_size.min(data.len() - offset);
+                        offset += bytes_consumed;
                     }
                     Err(e) => {
                         events.push(Err(e));
