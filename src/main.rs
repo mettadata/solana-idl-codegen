@@ -150,10 +150,7 @@ fn main() -> Result<()> {
         rustfmt_files.push(src_dir.join("events.rs"));
     }
 
-    let rustfmt_args: Vec<&str> = rustfmt_files
-        .iter()
-        .filter_map(|p| p.to_str())
-        .collect();
+    let rustfmt_args: Vec<&str> = rustfmt_files.iter().filter_map(|p| p.to_str()).collect();
 
     if !rustfmt_args.is_empty() {
         let rustfmt_result = std::process::Command::new("rustfmt")
