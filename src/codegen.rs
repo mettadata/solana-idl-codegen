@@ -365,6 +365,17 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
 
                     if use_bytemuck {
                         // For bytemuck types, we need unsafe implementations for Pod and Zeroable
+                        let safety_doc = concat!(
+                            "SAFETY: Pod and Zeroable require unsafe impl because they make guarantees about memory layout.\n",
+                            "This is safe because:\n",
+                            "1. The struct is #[repr(C)] or #[repr(C, packed)], ensuring predictable memory layout\n",
+                            "2. All fields are themselves Pod types (verified by IDL)\n",
+                            "3. No padding bytes contain uninitialized data\n",
+                            "4. The type can be safely transmuted to/from bytes\n",
+                            "\n",
+                            "These traits enable zero-copy deserialization of blockchain account data,\n",
+                            "which is critical for performance when processing large numbers of accounts."
+                        );
                         Ok(quote! {
                             #docs
                             #repr_attr
@@ -373,6 +384,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                                 #(#field_tokens),*
                             }
 
+                            #[doc = #safety_doc]
                             unsafe impl bytemuck::Pod for #name {}
                             unsafe impl bytemuck::Zeroable for #name {}
                         })
@@ -403,12 +415,24 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
 
                     if use_bytemuck {
                         // For bytemuck types, we need unsafe implementations for Pod and Zeroable
+                        let safety_doc = concat!(
+                            "SAFETY: Pod and Zeroable require unsafe impl because they make guarantees about memory layout.\n",
+                            "This is safe because:\n",
+                            "1. The struct is #[repr(C)] or #[repr(C, packed)], ensuring predictable memory layout\n",
+                            "2. All fields are themselves Pod types (verified by IDL)\n",
+                            "3. No padding bytes contain uninitialized data\n",
+                            "4. The type can be safely transmuted to/from bytes\n",
+                            "\n",
+                            "These traits enable zero-copy deserialization of blockchain account data,\n",
+                            "which is critical for performance when processing large numbers of accounts."
+                        );
                         Ok(quote! {
                             #docs
                             #repr_attr
                             #[derive(Debug, Clone, Copy, PartialEq)]
                             pub struct #name(#(pub #field_types),*);
 
+                            #[doc = #safety_doc]
                             unsafe impl bytemuck::Pod for #name {}
                             unsafe impl bytemuck::Zeroable for #name {}
                         })
@@ -460,6 +484,17 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
 
             if use_bytemuck {
                 // For bytemuck enums, we need unsafe implementations
+                let safety_doc = concat!(
+                    "SAFETY: Pod and Zeroable require unsafe impl because they make guarantees about memory layout.\n",
+                    "This is safe because:\n",
+                    "1. The enum is #[repr(C)] or #[repr(C, packed)], ensuring predictable memory layout\n",
+                    "2. All variant fields are themselves Pod types (verified by IDL)\n",
+                    "3. No padding bytes contain uninitialized data\n",
+                    "4. The type can be safely transmuted to/from bytes\n",
+                    "\n",
+                    "These traits enable zero-copy deserialization of blockchain account data,\n",
+                    "which is critical for performance when processing large numbers of accounts."
+                );
                 Ok(quote! {
                     #docs
                     #repr_attr
@@ -468,6 +503,7 @@ fn generate_type_def(ty: &TypeDef) -> Result<TokenStream> {
                         #(#variant_tokens),*
                     }
 
+                    #[doc = #safety_doc]
                     unsafe impl bytemuck::Pod for #name {}
                     unsafe impl bytemuck::Zeroable for #name {}
                 })
