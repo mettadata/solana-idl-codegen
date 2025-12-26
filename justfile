@@ -12,15 +12,18 @@ clean:
 check-workspace: clean
     cargo check --all --all-targets --all-features
 
-fmt:
+fmt-fix:
     cargo fmt --all
 
 # Check formatting without modifying files
-fmt-check:
+fmt:
     cargo fmt --all --check
 
 clippy:
     cargo clippy --all --all-targets --all-features -- --deny warnings
+
+clippy-fix:
+    cargo clippy --all --all-targets --all-features -- --deny warnings --fix
 
 # Run cargo fmt on all generated crates
 fmt-generated:
@@ -122,7 +125,7 @@ check-all:
     echo "=== Checking codegen workspace ==="
     echo ""
     echo "1. Checking formatting..."
-    just fmt-check
+    just fmt
     echo ""
     echo "2. Running clippy..."
     just clippy
