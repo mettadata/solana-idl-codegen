@@ -99,6 +99,9 @@ just test
 # Integration tests (slow, ~60s - compiles all generated crates)
 just test-integration
 
+# Serialization round-trip tests (fast, <1s - validates runtime behavior)
+cargo test --test serialization_roundtrip_tests
+
 # All tests including integration
 just test-all
 
@@ -109,7 +112,14 @@ just test-perf
 just test-with-timing
 ```
 
-**Note**: Integration tests compile all generated crates to verify correctness. This is slow but ensures generated code is valid.
+**Test Categories**:
+- **Unit tests** (91 tests): Fast validation of codegen logic and type mappings
+- **Integration tests** (23 tests): Structure and pattern verification
+  - 16 pattern/structure tests (file structure, module organization, trait implementation)
+  - 7 serialization round-trip tests (runtime behavior, discriminator validation)
+- **Performance tests**: Benchmarking code generation speed
+
+**Note**: Integration tests compile all generated crates to verify correctness. This is slow but ensures generated code is valid. The new serialization round-trip tests explicitly validate runtime behavior beyond compilation checks.
 
 ### Generated Code Quality Gates
 
