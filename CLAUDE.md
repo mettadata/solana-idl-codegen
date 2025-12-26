@@ -6,6 +6,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Rust CLI tool that generates strongly-typed Rust code bindings from Solana IDL (Interface Description Language) files. Parses JSON IDL files and produces idiomatic Rust code with proper naming conventions, Borsh/Bytemuck serialization support, and type-safe Pubkey handling.
 
+**Usage Context**: This tool generates Solana program interfaces for use in blockchain data ingestion systems, trading bots, and other applications that need to decode on-chain transactions and events.
+
+**IMPORTANT**: The `generated/` directory is gitignored and rebuilt on-demand. Never manually edit generated code - modify the IDL files or the codegen tool itself.
+
+## Quick Reference
+
+```bash
+# Most common commands
+just generate              # Generate all IDL bindings
+just test                  # Fast unit tests
+just check-all            # Full quality gate before commit
+
+# Update IDL sources
+git submodule update --remote
+
+# Quality checks (CI enforced)
+just fmt-check && just clippy
+
+# Verify generated code
+just check-generated       # Check compilation
+just lint-generated        # Check formatting + clippy
+```
+
+## IDL Source Files (Git Submodules)
+
+IDL files are managed as git submodules in `idl/`:
+- `idl/raydium-idl/` - Raydium AMM/CLMM/CPMM IDLs
+- `idl/pump-public-docs/` - PumpFun and PumpFun AMM IDLs
+
+**Update submodules** to pull latest IDL changes:
+```bash
+git submodule update --init --recursive    # First time clone
+git submodule update --remote              # Update to latest upstream
+```
+
+After updating submodules, regenerate bindings with `just generate`.
+
+## Typical Workflow
+
+```bash
+# 1. Update IDL submodules (if needed)
+git submodule update --remote
+
+# 2. Generate bindings from IDLs
+just generate
+
+# 3. Make changes to codegen tool (src/*.rs)
+# 4. Run quality checks
+just fmt-check && just clippy
+
+# 5. Test changes
+just test                    # Fast unit tests
+just check-generated         # Verify generated code compiles
+just test-all               # Full test suite before commit
+
+# 6. Commit changes (generated/ not included)
+```
+
 ## Development Commands
 
 ### Build and Run
@@ -34,24 +92,24 @@ These are enforced in CI and must pass before merging.
 ### Testing
 
 ```bash
-# Unit tests (84 tests, ~0.01s)
+# Unit tests (fast, <1s)
 cargo test
 just test
 
-# Integration tests (11 tests, ~61s - compiles all generated crates)
+# Integration tests (slow, ~60s - compiles all generated crates)
 just test-integration
 
 # All tests including integration
 just test-all
 
-# Performance tests (5 tests, ~1s)
+# Performance tests
 just test-perf
 
 # Run with timing details
 just test-with-timing
 ```
 
-**Note**: Integration tests compile all generated crates to verify they build successfully. This takes ~61 seconds.
+**Note**: Integration tests compile all generated crates to verify correctness. This is slow but ensures generated code is valid.
 
 ### Generated Code Quality Gates
 
@@ -64,16 +122,6 @@ just lint-generated             # Run fmt + clippy on generated code
 just check-all                  # Complete quality gate (codegen + generated)
 ```
 
-### Benchmarking
-
-```bash
-just bench                      # Run Criterion benchmarks with HTML reports
-```
-
-Performance targets:
-- Simple programs: ~42ms generation time
-- Complex programs: ~114ms generation time
-- Average: ~84ms per program
 
 ## Architecture
 
@@ -149,14 +197,38 @@ Key compatibility patterns in `idl.rs`:
 
 **Serde** (for Pubkey): Custom serializer/deserializer for base58 string representation
 
-### Discriminators
+### Discriminators (Critical for Solana)
+
+**Why discriminators matter**: Solana accounts and program logs are untyped byte arrays. Discriminators are 8-byte prefixes that identify the data structure type, enabling safe deserialization and preventing data misinterpretation.
 
 **Account discriminators**: 8-byte arrays for account type identification
 - Generated as `const DISCRIMINATOR: [u8; 8]`
-- Provides `try_from_slice_with_discriminator()` and `serialize_with_discriminator()`
-- Handles both Borsh and Bytemuck types differently
+- Provides `try_from_slice_with_discriminator()` validates discriminator before deserializing
+- Provides `serialize_with_discriminator()` prepends discriminator when writing
+- Handles both Borsh and Bytemuck types with appropriate deserialization
 
-**Event discriminators**: Same pattern for event parsing from logs
+**Event discriminators**: Same pattern for parsing events from program logs
+- Critical for blockchain data ingestion systems that decode transaction logs
+- Enables matching raw log data to specific event types
+
+## Project Structure
+
+**src/**: Codegen tool source
+- `main.rs` - CLI entry point
+- `idl.rs` - IDL data structures with dual format support
+- `codegen.rs` - Token-based code generation engine
+
+**idl/**: Git submodules containing IDL JSON files (raydium-idl, pump-public-docs)
+
+**generated/**: Auto-generated Rust crates (gitignored, not committed)
+
+**imported/**: Manually maintained reference implementations
+- `pump_interface/` - Hand-written Pump interface for comparison
+- Used as reference when improving codegen output
+
+**tests/**: Integration and performance tests
+
+**benches/**: Criterion benchmarks
 
 ## Justfile Configuration
 
@@ -175,6 +247,16 @@ Add new IDL bindings by:
 2. Adding module name to `projects` variable
 3. Running `just generate`
 
+## Error Handling
+
+**Tool code** (`src/`): Uses `anyhow::Result` with `.context()` for error chains
+```rust
+let idl_content = fs::read_to_string(&cli.input)
+    .context(format!("Failed to read IDL file: {:?}", cli.input))?;
+```
+
+**Generated code**: Uses `std::io::Result` for discriminator validation and deserialization
+
 ## Dependencies
 
 **Build dependencies** (Cargo.toml):
@@ -191,20 +273,24 @@ Add new IDL bindings by:
 - `solana-program 1.18` - Pubkey and Solana types
 - `serde 1.0` - Serde for Pubkey serialization
 
-## Testing Strategy
+## Key Implementation Details
 
-**Unit tests** (src/): Core logic testing (IDL parsing, type mapping, code generation)
+### Naming Conventions (via heck crate)
+- IDL names → Rust: `snake_case` for fields, `PascalCase` for types/enums
+- Example: IDL `publicKey` → Rust `pub_key`, IDL `TradeEvent` → `TradeEvent`
 
-**Integration tests** (tests/integration_tests.rs):
-- Generates all configured IDL bindings
-- Compiles each generated crate to verify syntax correctness
-- Tests specific patterns: event wrappers, discriminators, serialization
+### Code Formatting
+- Uses `prettyplease` for consistent formatting of generated code
+- All generated code passes `cargo fmt --check` and `cargo clippy`
 
-**Performance tests** (tests/performance_tests.rs):
-- Measures code generation speed for each program
-- Validates performance targets (avg ~84ms per program)
-
-**Benchmarks** (benches/): Criterion-based performance benchmarks with HTML reports
+### Module Organization
+Generated crates split code across 6 modules to avoid monolithic files:
+- `lib.rs` - Public API with re-exports
+- `types.rs` - Custom type definitions
+- `accounts.rs` - Account structs with discriminators
+- `instructions.rs` - Instruction enum, args, and account structs
+- `errors.rs` - Error enum with codes and messages
+- `events.rs` - Event structs with discriminators
 
 ## CI/CD
 
@@ -218,49 +304,73 @@ GitHub Actions workflow (`.github/workflows/ci.yml`):
 
 All checks must pass before merging PRs.
 
-## Common Patterns
+## Common Workflows
 
-### Adding a New IDL Source
+### Adding a New Solana Program Interface
 
-1. Add IDL file to `idl/` directory (or use git submodule)
-2. Update `justfile`:
-   ```just
-   projects := "... new_module"
-   idls := "... new_module:path/to/idl.json"
+**Example**: Adding a new Orca Whirlpool interface
+
+1. **Add IDL source** (git submodule or local file):
+   ```bash
+   git submodule add git@github.com:orca-so/whirlpools-idl.git idl/whirlpools-idl
    ```
-3. Run `just generate` to generate bindings
-4. Run `just check-generated` to verify compilation
 
-### Testing Generated Code
+2. **Update justfile**:
+   ```just
+   projects := "raydium_amm raydium_clmm ... orca_whirlpool"
+   idls := "... orca_whirlpool:idl/whirlpools-idl/whirlpool.json"
+   ```
 
-Generated code should be tested by:
-1. Compilation (automatic via integration tests)
-2. Serialization round-trip tests (in consuming projects)
-3. Discriminator validation against on-chain data
+3. **Generate and verify**:
+   ```bash
+   just generate
+   just check-generated
+   ```
 
-### Handling New IDL Features
+4. **Use in your application**:
+   - Generated code is available at `generated/orca_whirlpool/`
+   - Copy to your project's interface directory
+   - Import in your decoder: `use orca_whirlpool::events::*;`
 
-When IDL spec adds new features:
-1. Update `idl.rs` structs with `#[serde(default)]` for backward compatibility
-2. Update `codegen.rs` to handle new feature
-3. Add unit tests for the new pattern
+### Improving Codegen for Missing Features
+
+See `codegen-improvements.md` for systematic improvements needed:
+- Instruction→Event mapping generation
+- Pubkey→String conversion helpers
+- Event wrapper patterns
+- Account context helpers
+
+When adding new codegen features:
+1. Update `idl.rs` for new IDL fields (`#[serde(default)]` for compatibility)
+2. Implement in `codegen.rs` using `quote!` macros
+3. Add unit test in `src/codegen.rs` tests
 4. Add integration test verifying generated code compiles
-5. Update type mapping documentation
+5. Update type mapping table if applicable
 
-## Performance Considerations
+### Debugging Generated Code Issues
 
-- Code generation is fast (~84ms avg) - no need for incremental generation
-- Integration tests are slow (~61s) because they compile all generated crates
-- Use `just test` for fast iteration, `just test-all` before committing
-- Benchmark with `just bench` if modifying codegen performance-critical paths
+If generated code doesn't compile:
+1. Check `just check-generated` output for specific errors
+2. Inspect `generated/<module>/src/` files manually
+3. Compare with `imported/pump_interface/` reference implementation
+4. Use `RUST_LOG=debug` for verbose codegen output (if implemented)
+5. Add minimal reproduction case to integration tests
+
+## Performance Notes
+
+- **Code generation**: Fast (<100ms per program) - always regenerate from scratch
+- **Unit tests**: Very fast (<1s) - use for rapid iteration
+- **Integration tests**: Slow (~60s) - compile all generated crates to verify correctness
+- **Workflow**: Use `just test` during development, `just test-all` before commit
+- **Benchmarking**: Run `just bench` when optimizing codegen performance (Criterion with HTML reports)
 
 ## Documentation
 
 Key documentation files:
-- `README.md` - User-facing usage guide
+- `README.md` - User-facing usage guide and CLI reference
+- `codegen-improvements.md` - **Active development roadmap** for reducing boilerplate in blockchain data ingestion systems
+- `CODEGEN_FEATURES.md` - Supported IDL features and patterns
 - `INTEGRATION_TESTING.md` - How to write integration tests
-- `TEST_RESULTS.md` - Detailed test results
-- `PERFORMANCE_ANALYSIS.md` - Performance metrics and analysis
-- `CODEGEN_FEATURES.md` - Supported IDL features
-- `EVENT_WRAPPER_PATTERN.md` - Event discriminator pattern
-- `BENCHMARKING.md` - Benchmarking guide
+- `EVENT_WRAPPER_PATTERN.md` - Event discriminator pattern details
+- `PERFORMANCE_ANALYSIS.md` - Performance metrics and benchmarking
+- `TEST_RESULTS.md` - Detailed test execution results
