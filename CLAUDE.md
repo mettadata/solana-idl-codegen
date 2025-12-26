@@ -384,3 +384,10 @@ Key documentation files:
 - `EVENT_WRAPPER_PATTERN.md` - Event discriminator pattern details
 - `PERFORMANCE_ANALYSIS.md` - Performance metrics and benchmarking
 - `TEST_RESULTS.md` - Detailed test execution results
+
+## Active Technologies
+- Rust 2021 edition, MSRV 1.70.0 (stable toolchain) (001-idl-override)
+- File system (JSON override files), no database required (001-idl-override)
+
+## Recent Changes
+- 001-idl-override: Added Rust 2021 edition, MSRV 1.70.0 (stable toolchain)
