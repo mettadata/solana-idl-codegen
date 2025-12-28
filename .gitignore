@@ -1,2 +1,21 @@
 target/
 generated/
+
+# Rust build artifacts
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDE
+.idea/
+.vscode/
+
+# Logs and environment
+*.log
+.env*
+
+# Override files are committed (production configuration)
+# Only gitignore local testing overrides if needed
+overrides/*.local.json

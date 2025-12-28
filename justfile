@@ -90,11 +90,8 @@ test-integration: generate
 test-all: generate
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Running unit tests..."
-    just test
-    echo ""
-    echo "Running integration tests..."
-    just test-integration
+    echo "Running all tests..."
+    cargo test --all
     echo ""
     echo "✓ All tests passed!"
 
@@ -114,9 +111,7 @@ test-with-timing: generate
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running all tests with timing information..."
-    time cargo test --test integration_tests -- --nocapture
-    echo ""
-    cargo test --test performance_tests -- --nocapture
+    time cargo test --all -- --nocapture
 
 # Run all checks: fmt, clippy, and tests for both codegen and generated code
 check-all:

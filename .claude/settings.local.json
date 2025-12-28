@@ -5,7 +5,31 @@
       "Bash(cargo test:*)",
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
-      "Bash(just generate:*)"
+      "Bash(just generate:*)",
+      "Bash(git fetch:*)",
+      "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(.specify/scripts/bash/setup-plan.sh:*)",
+      "Bash(.specify/scripts/bash/update-agent-context.sh:*)",
+      "Skill(speckit.implement)",
+      "Bash(git rev-parse:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(if [ -d \"/home/utx0/Code/MettaData.com/pandora/idl/solana-idl-codegen/specs/001-idl-override/checklists\" ])",
+      "Bash(then echo \"EXISTS\")",
+      "Bash(else echo \"NOT_FOUND\")",
+      "Bash(fi)",
+      "Bash(ls:*)",
+      "Bash(for:*)",
+      "Bash(do echo \"=== Run $i ===\")",
+      "Bash(done)",
+      "Bash(just test:*)",
+      "Bash(just test-all:*)",
+      "Skill(speckit.review)",
+      "Bash(test:*)",
+      "Bash(cat:*)",
+      "Bash(just check-all:*)"
     ]
   }
 }
