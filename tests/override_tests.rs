@@ -7,28 +7,36 @@
 //! - Verification that generated code compiles and uses override values
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use tempfile::TempDir;
+
+/// Get absolute path to a fixture file to avoid race conditions from current directory changes
+fn fixture_path(relative_path: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/integration/fixtures")
+        .join(relative_path)
+}
 
 /// T019 [P] [US1] Integration test: IDL with missing address + override → generated code compiles
 #[test]
 fn test_missing_address_with_override_compiles() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us1");
-    let _ = fs::remove_dir_all(&test_dir); // Clean up from previous runs
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test IDL and override file to test directory
     let idl_path = test_dir.join("test_missing_address.json");
     let override_path = test_dir.join("test_address_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_missing_address.json",
+        fixture_path("test_missing_address.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_address_override.json",
+        fixture_path("test_address_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -78,29 +86,28 @@ fn test_missing_address_with_override_compiles() {
         "Generated code does not contain override address"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T020 [P] [US1] Integration test: verify PROGRAM_ID constant matches override value
 #[test]
 fn test_program_id_matches_override_value() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us1_verify");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_missing_address.json");
     let override_path = test_dir.join("test_address_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_missing_address.json",
+        fixture_path("test_missing_address.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_address_override.json",
+        fixture_path("test_address_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -142,8 +149,7 @@ fn test_program_id_matches_override_value() {
         "Generated lib.rs does not contain declare_id! macro"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 // ====================
@@ -153,22 +159,22 @@ fn test_program_id_matches_override_value() {
 /// T034 [P] [US2] Integration test: IDL with incorrect address + override → generated code uses override value
 #[test]
 fn test_incorrect_address_with_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us2");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_incorrect_address.json");
     let override_path = test_dir.join("test_address_correction.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_incorrect_address.json",
+        fixture_path("test_incorrect_address.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_address_correction.json",
+        fixture_path("test_address_correction.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -209,29 +215,28 @@ fn test_incorrect_address_with_override() {
         "Generated code should NOT contain the incorrect original address"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T035 [P] [US2] Integration test: verify warning logged showing original vs override address
 #[test]
 fn test_warning_shows_original_and_override_address() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us2_warning");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_incorrect_address.json");
     let override_path = test_dir.join("test_address_correction.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_incorrect_address.json",
+        fixture_path("test_incorrect_address.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_address_correction.json",
+        fixture_path("test_address_correction.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -274,8 +279,7 @@ fn test_warning_shows_original_and_override_address() {
         "Warning should be clearly marked"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 // ====================
@@ -285,22 +289,22 @@ fn test_warning_shows_original_and_override_address() {
 /// T049 [P] [US3] Integration test: IDL with incorrect account discriminators + override → generated code compiles
 #[test]
 fn test_account_discriminators_with_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us3");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_account_disc.json");
     let override_path = test_dir.join("test_account_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_account_disc.json",
+        fixture_path("test_account_disc.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_account_override.json",
+        fixture_path("test_account_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -330,29 +334,28 @@ fn test_account_discriminators_with_override() {
         .join("accounts.rs");
     assert!(accounts_rs.exists(), "Generated accounts.rs not found");
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T050 [P] [US3] Integration test: verify account struct DISCRIMINATOR constant matches override
 #[test]
 fn test_account_discriminator_constant_matches_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us3_verify");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_account_disc.json");
     let override_path = test_dir.join("test_account_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_account_disc.json",
+        fixture_path("test_account_disc.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_account_override.json",
+        fixture_path("test_account_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -406,8 +409,7 @@ fn test_account_discriminator_constant_matches_override() {
         "UserAccount DISCRIMINATOR constant does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 // ====================
@@ -417,19 +419,19 @@ fn test_account_discriminator_constant_matches_override() {
 /// T065 [P] [US4] Integration test: IDL with incorrect event discriminators + override → generated code compiles
 #[test]
 fn test_event_discriminators_with_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us4");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy("tests/integration/fixtures/test_event_disc.json", &idl_path)
+    fs::copy(fixture_path("test_event_disc.json"), &idl_path)
         .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_event_override.json",
+        fixture_path("test_event_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -459,26 +461,25 @@ fn test_event_discriminators_with_override() {
         .join("events.rs");
     assert!(events_rs.exists(), "Generated events.rs not found");
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T066 [P] [US4] Integration test: verify event struct DISCRIMINATOR constant matches override
 #[test]
 fn test_event_discriminator_constant_matches_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us4_verify");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy("tests/integration/fixtures/test_event_disc.json", &idl_path)
+    fs::copy(fixture_path("test_event_disc.json"), &idl_path)
         .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_event_override.json",
+        fixture_path("test_event_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -531,8 +532,7 @@ fn test_event_discriminator_constant_matches_override() {
         "SwapEvent discriminator constant does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 // ====================
@@ -542,22 +542,22 @@ fn test_event_discriminator_constant_matches_override() {
 /// T077 [P] [US5] Integration test: IDL with incorrect instruction discriminators + override → generated code compiles
 #[test]
 fn test_instruction_discriminators_with_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us5");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_instruction_disc.json");
     let override_path = test_dir.join("test_instruction_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_instruction_disc.json",
+        fixture_path("test_instruction_disc.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_instruction_override.json",
+        fixture_path("test_instruction_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -590,29 +590,28 @@ fn test_instruction_discriminators_with_override() {
         "Generated instructions.rs not found"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T078 [P] [US5] Integration test: verify instruction enum discriminator matches override
 #[test]
 fn test_instruction_discriminator_constant_matches_override() {
-    let test_dir = std::env::temp_dir().join("idl_override_test_us5_verify");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Copy test files
     let idl_path = test_dir.join("test_instruction_disc.json");
     let override_path = test_dir.join("test_instruction_override.json");
 
     fs::copy(
-        "tests/integration/fixtures/test_instruction_disc.json",
+        fixture_path("test_instruction_disc.json"),
         &idl_path,
     )
     .expect("Failed to copy test IDL");
 
     fs::copy(
-        "tests/integration/fixtures/test_instruction_override.json",
+        fixture_path("test_instruction_override.json"),
         &override_path,
     )
     .expect("Failed to copy override file");
@@ -658,8 +657,7 @@ fn test_instruction_discriminator_constant_matches_override() {
         "Trade instruction discriminator does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 // ====================
@@ -669,9 +667,9 @@ fn test_instruction_discriminator_constant_matches_override() {
 /// T091 [P] Integration test: multiple override files detected error
 #[test]
 fn test_multiple_override_files_error() {
-    let test_dir = PathBuf::from("/tmp/idl_override_test_multiple_files");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Create overrides directory
     let overrides_dir = test_dir.join("overrides");
@@ -755,16 +753,15 @@ fn test_multiple_override_files_error() {
         stderr
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T092 [P] Integration test: malformed override file fails gracefully
 #[test]
 fn test_malformed_override_file_error() {
-    let test_dir = PathBuf::from("/tmp/idl_override_test_malformed");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Create test IDL file (minimal)
     let idl_content = r#"{
@@ -820,16 +817,15 @@ fn test_malformed_override_file_error() {
         stderr
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }
 
 /// T093 [P] Integration test: empty override file error
 #[test]
 fn test_empty_override_file_error() {
-    let test_dir = PathBuf::from("/tmp/idl_override_test_empty");
-    let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    // TempDir automatically cleans up on drop (RAII pattern)
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_dir = temp_dir.path();
 
     // Create test IDL file (minimal)
     let idl_content = r#"{
@@ -882,6 +878,5 @@ fn test_empty_override_file_error() {
         stderr
     );
 
-    // Clean up
-    let _ = fs::remove_dir_all(&test_dir);
+    // Cleanup happens automatically when temp_dir drops
 }

@@ -542,26 +542,25 @@ mod tests {
     /// T012 [P] [US1] Unit test for discover_override_file with missing file
     #[test]
     fn test_discover_override_file_missing() {
-        // Create isolated temp directory for this test
-        let test_dir = std::env::temp_dir().join("override_test_missing");
-        let _ = fs::remove_dir_all(&test_dir); // Clean up from previous runs
-        fs::create_dir_all(&test_dir).unwrap();
+        use tempfile::TempDir;
+
+        // TempDir automatically cleans up on drop (RAII pattern)
+        let temp_dir = TempDir::new().unwrap();
+        let test_dir = temp_dir.path();
 
         let idl_path = test_dir.join("nonexistent.json");
         let idl_name = "nonexistent_test_file_xyz"; // Use unique name unlikely to exist
 
         // Change to test directory so convention-based discovery doesn't find project files
         let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&test_dir).unwrap();
+        std::env::set_current_dir(test_dir).unwrap();
 
         let result = discover_override_file(&idl_path, idl_name, None).unwrap();
 
         // Restore original directory
         std::env::set_current_dir(original_dir).unwrap();
 
-        // Clean up
-        let _ = fs::remove_dir_all(&test_dir);
-
+        // Cleanup happens automatically when temp_dir drops
         assert!(matches!(result, OverrideDiscovery::NotFound));
     }
 

@@ -77,21 +77,21 @@ build-generated: clean generate
     done
 
 test:
-    cargo test -- --test-threads=1
+    cargo test
 
 # Run integration tests (requires generated code)
 test-integration: generate
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running integration tests..."
-    cargo test --test integration_tests -- --nocapture --test-threads=1
+    cargo test --test integration_tests -- --nocapture
 
 # Run all tests including integration tests
 test-all: generate
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Running all tests (sequential to avoid race conditions)..."
-    cargo test --all -- --test-threads=1
+    echo "Running all tests..."
+    cargo test --all
     echo ""
     echo "✓ All tests passed!"
 
@@ -100,7 +100,7 @@ test-perf: generate
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running performance tests..."
-    cargo test --test performance_tests -- --nocapture --test-threads=1
+    cargo test --test performance_tests -- --nocapture
 
 # Run benchmarks
 bench:
@@ -111,7 +111,7 @@ test-with-timing: generate
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running all tests with timing information..."
-    time cargo test --all -- --test-threads=1 --nocapture
+    time cargo test --all -- --nocapture
 
 # Run all checks: fmt, clippy, and tests for both codegen and generated code
 check-all:

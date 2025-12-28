@@ -239,18 +239,16 @@ cargo build --release
 ### Testing
 
 ```bash
-# Recommended: Use justfile commands (handles sequential execution)
+# Recommended: Use justfile commands
 just test              # Fast unit tests
-just test-all          # All tests (157 total)
+just test-all          # All tests (158 total)
 just test-integration  # Integration tests only
 
-# Or run directly with cargo (sequential execution required)
-cargo test -- --test-threads=1                    # Unit tests
-cargo test --all -- --test-threads=1              # All tests
-cargo test --test override_tests -- --test-threads=1  # Override integration tests
+# Or run directly with cargo
+cargo test             # Unit tests
+cargo test --all       # All tests
+cargo test --test override_tests  # Override integration tests
 ```
-
-**Note**: Tests must run sequentially (`--test-threads=1`) because some integration tests copy fixture files and experience race conditions in parallel execution.
 
 ### Code Quality
 
