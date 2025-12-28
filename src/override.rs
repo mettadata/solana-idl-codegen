@@ -204,26 +204,26 @@ pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
     Ok(override_file)
 }
 
-/// Validate that discriminators are not all zeros
+/// Validate a single discriminator is not all zeros
 ///
 /// # Arguments
+/// - `name`: Entity name
+/// - `discriminator`: The 8-byte discriminator to validate
 /// - `entity_type`: Type of entity ("account", "event", "instruction")
-/// - `overrides`: Map of entity name to discriminator override
 ///
 /// # Returns
-/// - `Ok(())` if all discriminators are valid
-/// - `Err(ValidationError::AllZeroDiscriminator)` if any discriminator is all zeros
-fn validate_discriminators(
-    entity_type: &str,
-    overrides: &std::collections::HashMap<String, DiscriminatorOverride>,
+/// - `Ok(())` if discriminator is valid
+/// - `Err(ValidationError::AllZeroDiscriminator)` if discriminator is all zeros
+fn validate_discriminator(
+    name: &str,
+    discriminator: &[u8; 8],
+    entity_type: &'static str,
 ) -> Result<(), ValidationError> {
-    for (name, disc_override) in overrides {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: entity_type.to_string(),
-                entity_name: name.clone(),
-            });
-        }
+    if discriminator == &[0u8; 8] {
+        return Err(ValidationError::AllZeroDiscriminator {
+            entity_type: entity_type.to_string(),
+            entity_name: name.to_string(),
+        });
     }
     Ok(())
 }
@@ -374,10 +374,18 @@ pub fn validate_override_file(
         }
     }
 
-    // Validate discriminators are not all zeros
-    validate_discriminators("account", &override_file.accounts)?;
-    validate_discriminators("event", &override_file.events)?;
-    validate_discriminators("instruction", &override_file.instructions)?;
+    // Validate all discriminators in a single pass
+    [
+        (&override_file.accounts, "account"),
+        (&override_file.events, "event"),
+        (&override_file.instructions, "instruction"),
+    ]
+    .iter()
+    .try_for_each(|(map, entity_type)| {
+        map.iter().try_for_each(|(name, disc)| {
+            validate_discriminator(name, &disc.discriminator, entity_type)
+        })
+    })?;
 
     // T056 [US3]: Validate account names exist in IDL
     let account_names: Option<Vec<&str>> = idl
