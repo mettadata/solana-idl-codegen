@@ -204,7 +204,7 @@ pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
 /// Validate override file structure and values
 ///
 /// # Returns
-/// - `Ok(warnings)` if validation passes, with list of warning messages
+/// - `Ok(())` if validation passes
 /// - `Err(ValidationError)` if validation fails
 ///
 /// # Validation Rules
@@ -213,12 +213,11 @@ pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
 /// - Program address cannot be system default (11111...1111)
 /// - Discriminators must be exactly 8 bytes (enforced by type)
 /// - Discriminators cannot be all zeros
-/// - Entity names should exist in IDL (warnings only)
+/// - Entity names MUST exist in IDL (errors for unknown names)
 pub fn validate_override_file(
     override_file: &OverrideFile,
     idl: &crate::idl::Idl,
-) -> Result<Vec<String>, ValidationError> {
-    let mut warnings = Vec::new();
+) -> Result<(), ValidationError> {
 
     // Check that at least one field is non-empty
     if override_file.program_address.is_none()
@@ -285,82 +284,91 @@ pub fn validate_override_file(
         }
     }
 
-    // T056 [US3]: Check account names exist in IDL (warnings for unknown names)
+    // T056 [US3]: Check account names exist in IDL (errors for unknown names)
     if let Some(ref accounts) = idl.accounts {
         let account_names: Vec<&str> = accounts.iter().map(|a| a.name.as_str()).collect();
 
         for account_name in override_file.accounts.keys() {
             if !account_names.contains(&account_name.as_str()) {
-                warnings.push(format!(
-                    "Unknown account '{}' in override file. Available accounts: {}",
-                    account_name,
-                    if account_names.is_empty() {
+                return Err(ValidationError::UnknownEntity {
+                    entity_type: "account".to_string(),
+                    entity_name: account_name.clone(),
+                    available: if account_names.is_empty() {
                         "(none)".to_string()
                     } else {
                         account_names.join(", ")
-                    }
-                ));
+                    },
+                });
             }
         }
     } else if !override_file.accounts.is_empty() {
         // IDL has no accounts but override file has account overrides
-        warnings.push(
-            "Override file specifies account discriminators but IDL has no accounts defined"
-                .to_string(),
-        );
+        // Return error for the first account name
+        let first_account = override_file.accounts.keys().next().unwrap();
+        return Err(ValidationError::UnknownEntity {
+            entity_type: "account".to_string(),
+            entity_name: first_account.clone(),
+            available: "(none - IDL has no accounts defined)".to_string(),
+        });
     }
 
-    // T069 [US4]: Check event names exist in IDL (warnings for unknown names)
+    // T069 [US4]: Check event names exist in IDL (errors for unknown names)
     if let Some(ref events) = idl.events {
         let event_names: Vec<&str> = events.iter().map(|e| e.name.as_str()).collect();
 
         for event_name in override_file.events.keys() {
             if !event_names.contains(&event_name.as_str()) {
-                warnings.push(format!(
-                    "Unknown event '{}' in override file. Available events: {}",
-                    event_name,
-                    if event_names.is_empty() {
+                return Err(ValidationError::UnknownEntity {
+                    entity_type: "event".to_string(),
+                    entity_name: event_name.clone(),
+                    available: if event_names.is_empty() {
                         "(none)".to_string()
                     } else {
                         event_names.join(", ")
-                    }
-                ));
+                    },
+                });
             }
         }
     } else if !override_file.events.is_empty() {
         // IDL has no events but override file has event overrides
-        warnings.push(
-            "Override file specifies event discriminators but IDL has no events defined"
-                .to_string(),
-        );
+        // Return error for the first event name
+        let first_event = override_file.events.keys().next().unwrap();
+        return Err(ValidationError::UnknownEntity {
+            entity_type: "event".to_string(),
+            entity_name: first_event.clone(),
+            available: "(none - IDL has no events defined)".to_string(),
+        });
     }
 
-    // T081 [US5]: Check instruction names exist in IDL (warnings for unknown names)
+    // T081 [US5]: Check instruction names exist in IDL (errors for unknown names)
     if !idl.instructions.is_empty() {
         let instruction_names: Vec<&str> = idl.instructions.iter().map(|i| i.name.as_str()).collect();
 
         for instruction_name in override_file.instructions.keys() {
             if !instruction_names.contains(&instruction_name.as_str()) {
-                warnings.push(format!(
-                    "Unknown instruction '{}' in override file. Available instructions: {}",
-                    instruction_name,
-                    if instruction_names.is_empty() {
+                return Err(ValidationError::UnknownEntity {
+                    entity_type: "instruction".to_string(),
+                    entity_name: instruction_name.clone(),
+                    available: if instruction_names.is_empty() {
                         "(none)".to_string()
                     } else {
                         instruction_names.join(", ")
-                    }
-                ));
+                    },
+                });
             }
         }
     } else if !override_file.instructions.is_empty() {
         // IDL has no instructions but override file has instruction overrides
-        warnings.push(
-            "Override file specifies instruction discriminators but IDL has no instructions defined"
-                .to_string(),
-        );
+        // Return error for the first instruction name
+        let first_instruction = override_file.instructions.keys().next().unwrap();
+        return Err(ValidationError::UnknownEntity {
+            entity_type: "instruction".to_string(),
+            entity_name: first_instruction.clone(),
+            available: "(none - IDL has no instructions defined)".to_string(),
+        });
     }
 
-    Ok(warnings)
+    Ok(())
 }
 
 /// Apply validated overrides to IDL structure
@@ -881,7 +889,7 @@ mod tests {
         assert!(override_file.accounts.contains_key("PoolState"));
     }
 
-    /// T048 [P] [US3] Unit test for unknown account name warning
+    /// T048 [P] [US3] Unit test for unknown account name error
     #[test]
     fn test_unknown_account_name_warning() {
         let override_file = OverrideFile {
@@ -914,10 +922,18 @@ mod tests {
             metadata: None,
         };
 
-        // Validation should pass but return warnings about unknown account
+        // Validation should fail with UnknownEntity error
         let result = validate_override_file(&override_file, &idl);
-        // This will be enhanced when we add account name validation
-        assert!(result.is_ok());
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, ValidationError::UnknownEntity { .. }));
+
+        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+            assert_eq!(entity_type, "account");
+            assert_eq!(entity_name, "NonExistentAccount");
+            assert!(available.contains("none"));
+        }
     }
 
     // ====================
@@ -996,7 +1012,7 @@ mod tests {
         );
     }
 
-    /// T063 [P] [US4] Unit test for unknown event name warning
+    /// T063 [P] [US4] Unit test for unknown event name error
     #[test]
     fn test_unknown_event_name_warning() {
         let override_file = OverrideFile {
@@ -1038,17 +1054,18 @@ mod tests {
             metadata: None,
         };
 
-        let warnings = validate_override_file(&override_file, &idl)
-            .expect("Validation should succeed with warnings");
+        // Validation should fail with UnknownEntity error for UnknownEvent
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_err());
 
-        assert!(!warnings.is_empty(), "Should have warnings");
-        assert!(
-            warnings
-                .iter()
-                .any(|w| w.contains("Unknown event") && w.contains("UnknownEvent")),
-            "Should warn about unknown event name. Got: {:?}",
-            warnings
-        );
+        let err = result.unwrap_err();
+        assert!(matches!(err, ValidationError::UnknownEntity { .. }));
+
+        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+            assert_eq!(entity_type, "event");
+            assert_eq!(entity_name, "UnknownEvent");
+            assert!(available.contains("TradeEvent"));
+        }
     }
 
     /// T064 [P] [US4] Unit test for multiple event overrides in same file
@@ -1226,7 +1243,7 @@ mod tests {
         );
     }
 
-    /// T076 [P] [US5] Unit test for unknown instruction name warning
+    /// T076 [P] [US5] Unit test for unknown instruction name error
     #[test]
     fn test_unknown_instruction_name_warning() {
         let override_file = OverrideFile {
@@ -1270,15 +1287,17 @@ mod tests {
             metadata: None,
         };
 
-        let warnings = validate_override_file(&override_file, &idl)
-            .expect("Validation should succeed with warnings");
+        // Validation should fail with UnknownEntity error for UnknownInstruction
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_err());
 
-        assert!(!warnings.is_empty(), "Should have warnings");
-        assert!(
-            warnings.iter().any(|w| w.contains("Unknown instruction")
-                && w.contains("UnknownInstruction")),
-            "Should warn about unknown instruction name. Got: {:?}",
-            warnings
-        );
+        let err = result.unwrap_err();
+        assert!(matches!(err, ValidationError::UnknownEntity { .. }));
+
+        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+            assert_eq!(entity_type, "instruction");
+            assert_eq!(entity_name, "UnknownInstruction");
+            assert!(available.contains("Initialize"));
+        }
     }
 }

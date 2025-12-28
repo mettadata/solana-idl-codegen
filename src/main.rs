@@ -57,7 +57,7 @@ fn main() -> Result<()> {
                 .context("Failed to load override file")?;
 
             // T025: Validate override file
-            let _warnings = r#override::validate_override_file(&override_file, &idl)
+            r#override::validate_override_file(&override_file, &idl)
                 .context("Override file validation failed")?;
 
             // T026: Apply overrides to IDL

@@ -89,10 +89,10 @@ A developer needs to override instruction discriminators that don't match the de
 ### Edge Cases
 
 - What happens when an override file specifies an address for an IDL that already has an address? (Answer: Override takes precedence, warning logged)
-- What happens when override file contains discriminators for accounts/events that don't exist in the IDL? (Answer: Warning logged, override ignored)
+- What happens when override file contains discriminators for accounts/events/instructions that don't exist in the IDL? (Answer: Clear error message with available entity names, codegen fails fast to catch typos and outdated overrides)
 - What happens when override file is malformed or contains invalid data? (Answer: Clear error message, codegen fails fast)
 - What happens when multiple override files are detected for the same IDL? (Answer: Fail with clear error message identifying the conflicting override files and requiring user to resolve the conflict)
-- What happens when an override file exists but is empty? (Answer: No overrides applied, codegen proceeds normally)
+- What happens when an override file exists but is empty? (Answer: Validation error with clear message, codegen fails fast)
 - What happens when discriminator values in override are not 8-byte arrays? (Answer: Validation error with clear message)
 - What happens when override file is updated after code generation? (Answer: Generated code remains unchanged until codegen is re-run)
 
@@ -114,9 +114,17 @@ A developer needs to override instruction discriminators that don't match the de
 - **FR-012**: Override files MUST be in JSON format for version control and human readability
 - **FR-013**: System MUST allow selective overrides (override only specific accounts/events without affecting others)
 - **FR-014**: Override file location MUST be configurable (via command-line argument); when not specified, system MUST use convention-based discovery (check `./overrides/<idl-name>.json` then `./idl-overrides.json` in that order)
-- **FR-015**: System MUST ignore override entries for entities that don't exist in the IDL (with warning)
+- **FR-015**: System MUST fail fast with clear error when override entries reference entities that don't exist in the IDL (prevents typos and outdated overrides from silently being ignored)
 - **FR-016**: System MUST fail with clear error when multiple override files are detected for the same IDL, identifying all conflicting files
 - **FR-017**: Each override file MUST contain overrides for exactly one IDL file (no multi-IDL override files)
+
+**Design Rationale for Strict Validation (FR-015)**: The system uses fail-fast error handling for unknown entity names rather than warnings because:
+1. **Catch Configuration Errors Early**: Typos in entity names (e.g., "PoolSate" vs "PoolState") would silently fail to apply without errors
+2. **Prevent Outdated Overrides**: When IDL files are updated and entities are renamed/removed, outdated override files would silently fail to apply
+3. **Clear Feedback**: Developers get immediate, actionable error messages showing available entity names
+4. **Production Safety**: Silent failures could lead to runtime errors when incorrect discriminators are used in production
+
+This stricter validation aligns with the "fail fast" principle (FR-009) and ensures override files remain synchronized with their corresponding IDL files.
 
 ### Key Entities
 

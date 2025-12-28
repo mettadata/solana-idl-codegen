@@ -10,6 +10,8 @@
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+**⚠️ Design Deviation from Spec**: The implementation deviates from spec.md FR-015 regarding unknown entity names. The spec specified "warning logged, override ignored" but implementation uses **errors (fail-fast)**. This stricter validation catches configuration errors (typos, outdated overrides) immediately rather than silently ignoring them. All unknown entity name validations (T048, T058, T063, T071, T076, T083) return `ValidationError::UnknownEntity` instead of warnings.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -136,7 +138,7 @@
 - [x] T045 [P] [US3] Unit test for discriminator validation (exactly 8 bytes) in `src/override.rs` tests module
 - [x] T046 [P] [US3] Unit test for discriminator validation (not all zeros) in `src/override.rs` tests module
 - [x] T047 [P] [US3] Unit test for account discriminator override application in `src/override.rs` tests module
-- [x] T048 [P] [US3] Unit test for unknown account name warning in `src/override.rs` tests module
+- [x] T048 [P] [US3] Unit test for unknown account name error in `src/override.rs` tests module
 
 ### Integration Tests for User Story 3 (MANDATORY)
 
@@ -152,7 +154,7 @@
 - [x] T055 [P] [US3] Implement discriminator sanity validation (not all zeros) in `src/override.rs`
 - [x] T056 [US3] Enhance `validate_override_file()` to check account names exist in IDL in `src/override.rs`
 - [x] T057 [US3] Enhance `apply_overrides()` to apply account discriminator overrides in `src/override.rs`
-- [x] T058 [US3] Add warning for unknown account names in override file in `src/override.rs`
+- [x] T058 [US3] Return error for unknown account names in override file in `src/override.rs`
 - [x] T059 [US3] Update IDL account discriminator fields with override values in `src/override.rs`
 - [x] T060 [US3] Verify all unit tests pass: `cargo test --lib override`
 - [x] T061 [US3] Verify integration tests pass: `cargo test --test override_tests test_account_disc`
@@ -170,7 +172,7 @@
 ### Unit Tests for User Story 4 (MANDATORY)
 
 - [x] T062 [P] [US4] Unit test for event discriminator override application in `src/override.rs` tests module
-- [x] T063 [P] [US4] Unit test for unknown event name warning in `src/override.rs` tests module
+- [x] T063 [P] [US4] Unit test for unknown event name error in `src/override.rs` tests module
 - [x] T064 [P] [US4] Unit test for multiple event overrides in same file in `src/override.rs` tests module
 
 ### Integration Tests for User Story 4 (MANDATORY)
@@ -184,7 +186,7 @@
 
 - [x] T069 [US4] Enhance `validate_override_file()` to check event names exist in IDL in `src/override.rs`
 - [x] T070 [US4] Enhance `apply_overrides()` to apply event discriminator overrides in `src/override.rs`
-- [x] T071 [US4] Add warning for unknown event names in override file in `src/override.rs`
+- [x] T071 [US4] Return error for unknown event names in override file in `src/override.rs`
 - [x] T072 [US4] Update IDL event discriminator fields with override values in `src/override.rs`
 - [x] T073 [US4] Verify all unit tests pass: `cargo test --lib override`
 - [x] T074 [US4] Verify integration tests pass: `cargo test --test override_tests test_event_disc`
@@ -202,7 +204,7 @@
 ### Unit Tests for User Story 5 (MANDATORY)
 
 - [x] T075 [P] [US5] Unit test for instruction discriminator override application in `src/override.rs` tests module
-- [x] T076 [P] [US5] Unit test for unknown instruction name warning in `src/override.rs` tests module
+- [x] T076 [P] [US5] Unit test for unknown instruction name error in `src/override.rs` tests module
 
 ### Integration Tests for User Story 5 (MANDATORY)
 
@@ -215,7 +217,7 @@
 
 - [x] T081 [US5] Enhance `validate_override_file()` to check instruction names exist in IDL in `src/override.rs`
 - [x] T082 [US5] Enhance `apply_overrides()` to apply instruction discriminator overrides in `src/override.rs`
-- [x] T083 [US5] Add warning for unknown instruction names in override file in `src/override.rs`
+- [x] T083 [US5] Return error for unknown instruction names in override file in `src/override.rs`
 - [x] T084 [US5] Update IDL instruction discriminator fields with override values in `src/override.rs`
 - [x] T085 [US5] Verify all unit tests pass: `cargo test --lib override`
 - [x] T086 [US5] Verify integration tests pass: `cargo test --test override_tests test_instruction_disc`
