@@ -31,8 +31,10 @@ The IDL Override System implementation is **well-structured and functionally com
 6. ✅ Zero discriminator constant (C-006): ZERO_DISCRIMINATOR constant for improved code clarity
 7. ✅ Enhanced conflict errors (C-008): Priority order and resolution steps in conflict error messages
 
-**Remaining Improvement Opportunities**:
-- Additional performance optimizations (1 suggestion remaining - low impact for typical use cases)
+**Skipped Improvements**:
+- ❌ Suggestion #7 (Caching optimization): Won't implement - premature optimization with negligible real-world benefit
+
+**Review Status**: ✅ **COMPLETE** - All meaningful improvements implemented, codebase is in excellent shape
 
 ---
 
@@ -488,6 +490,8 @@ if disc_override.discriminator == ZERO_DISCRIMINATOR { ... }
 
 ### 7. Cache Account/Event/Instruction Name Collections
 
+**Status**: ❌ **WON'T IMPLEMENT** - Premature optimization with negligible real-world benefit
+
 **Impact**: Low | **Effort**: Low | **Category**: Performance
 
 **Problem**: In `apply_overrides()`, we iterate over accounts/events/instructions multiple times looking up HashMap entries.
@@ -520,6 +524,14 @@ if override_file.accounts.len() > 10 {
 ```
 
 **Note**: Current implementation is already efficient (HashMap lookup is O(1)). This optimization only helps with very large IDL files (>100 accounts) and many overrides.
+
+**Rationale for Not Implementing**:
+- Current code already uses O(1) HashMap lookups - fundamentally efficient
+- Only benefits edge cases: >100 accounts AND >10 overrides simultaneously (rare in practice)
+- Override system runs once at codegen time, not in hot path
+- Would add code complexity for <2ms improvement in edge cases
+- Violates "measure first, optimize later" principle - no evidence this is a bottleneck
+- Aligns with review's own recommendation: "Prioritize clarity improvements over micro-optimizations"
 
 ---
 
