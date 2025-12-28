@@ -408,3 +408,132 @@ fn test_account_discriminator_constant_matches_override() {
     // Clean up
     let _ = fs::remove_dir_all(&test_dir);
 }
+
+// ====================
+// User Story 4: Override Incorrect Event Discriminators
+// ====================
+
+/// T065 [P] [US4] Integration test: IDL with incorrect event discriminators + override → generated code compiles
+#[test]
+fn test_event_discriminators_with_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us4");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_event_disc.json");
+    let override_path = test_dir.join("test_event_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_event_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_event_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Verify generated code exists
+    let events_rs = output_dir
+        .join("test_program")
+        .join("src")
+        .join("events.rs");
+    assert!(events_rs.exists(), "Generated events.rs not found");
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T066 [P] [US4] Integration test: verify event struct DISCRIMINATOR constant matches override
+#[test]
+fn test_event_discriminator_constant_matches_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us4_verify");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_event_disc.json");
+    let override_path = test_dir.join("test_event_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_event_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_event_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Read generated events.rs
+    let events_rs_path = output_dir
+        .join("test_program")
+        .join("src")
+        .join("events.rs");
+    let events_rs_content =
+        fs::read_to_string(&events_rs_path).expect("Failed to read generated events.rs");
+
+    // Verify TradeEvent discriminator matches override [1, 2, 3, 4, 5, 6, 7, 8]
+    assert!(
+        events_rs_content.contains("pub struct TradeEvent"),
+        "Generated events.rs does not contain TradeEvent struct"
+    );
+    assert!(
+        events_rs_content.contains("const TRADE_EVENT_EVENT_DISCM: [u8; 8] = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]"),
+        "TradeEvent discriminator constant does not match override value [1, 2, 3, 4, 5, 6, 7, 8]"
+    );
+
+    // Verify SwapEvent discriminator matches override [11, 12, 13, 14, 15, 16, 17, 18]
+    assert!(
+        events_rs_content.contains("pub struct SwapEvent"),
+        "Generated events.rs does not contain SwapEvent struct"
+    );
+    assert!(
+        events_rs_content.contains("const SWAP_EVENT_EVENT_DISCM: [u8; 8] = [11u8, 12u8, 13u8, 14u8, 15u8, 16u8, 17u8, 18u8]"),
+        "SwapEvent discriminator constant does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}

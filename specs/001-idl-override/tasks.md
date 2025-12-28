@@ -169,25 +169,25 @@
 
 ### Unit Tests for User Story 4 (MANDATORY)
 
-- [ ] T062 [P] [US4] Unit test for event discriminator override application in `src/override.rs` tests module
-- [ ] T063 [P] [US4] Unit test for unknown event name warning in `src/override.rs` tests module
-- [ ] T064 [P] [US4] Unit test for multiple event overrides in same file in `src/override.rs` tests module
+- [x] T062 [P] [US4] Unit test for event discriminator override application in `src/override.rs` tests module
+- [x] T063 [P] [US4] Unit test for unknown event name warning in `src/override.rs` tests module
+- [x] T064 [P] [US4] Unit test for multiple event overrides in same file in `src/override.rs` tests module
 
 ### Integration Tests for User Story 4 (MANDATORY)
 
-- [ ] T065 [P] [US4] Integration test: IDL with incorrect event discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
-- [ ] T066 [P] [US4] Integration test: verify event struct `DISCRIMINATOR` constant matches override in `tests/integration/override_tests.rs`
-- [ ] T067 [P] [US4] Create test fixture: IDL with incorrect event discriminators in `tests/integration/fixtures/test_event_disc.json`
-- [ ] T068 [P] [US4] Create test fixture: override file with corrected event discriminators in `tests/integration/fixtures/test_event_override.json`
+- [x] T065 [P] [US4] Integration test: IDL with incorrect event discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
+- [x] T066 [P] [US4] Integration test: verify event struct `DISCRIMINATOR` constant matches override in `tests/integration/override_tests.rs`
+- [x] T067 [P] [US4] Create test fixture: IDL with incorrect event discriminators in `tests/integration/fixtures/test_event_disc.json`
+- [x] T068 [P] [US4] Create test fixture: override file with corrected event discriminators in `tests/integration/fixtures/test_event_override.json`
 
 ### Implementation for User Story 4
 
-- [ ] T069 [US4] Enhance `validate_override_file()` to check event names exist in IDL in `src/override.rs`
-- [ ] T070 [US4] Enhance `apply_overrides()` to apply event discriminator overrides in `src/override.rs`
-- [ ] T071 [US4] Add warning for unknown event names in override file in `src/override.rs`
-- [ ] T072 [US4] Update IDL event discriminator fields with override values in `src/override.rs`
-- [ ] T073 [US4] Verify all unit tests pass: `cargo test --lib override`
-- [ ] T074 [US4] Verify integration tests pass: `cargo test --test override_tests test_event_disc`
+- [x] T069 [US4] Enhance `validate_override_file()` to check event names exist in IDL in `src/override.rs`
+- [x] T070 [US4] Enhance `apply_overrides()` to apply event discriminator overrides in `src/override.rs`
+- [x] T071 [US4] Add warning for unknown event names in override file in `src/override.rs`
+- [x] T072 [US4] Update IDL event discriminator fields with override values in `src/override.rs`
+- [x] T073 [US4] Verify all unit tests pass: `cargo test --lib override`
+- [x] T074 [US4] Verify integration tests pass: `cargo test --test override_tests test_event_disc`
 
 **Checkpoint**: User Stories 1-4 should all work independently (program addresses, account discriminators, event discriminators)
 

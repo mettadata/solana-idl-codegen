@@ -1,0 +1,48 @@
+{
+  "version": "0.1.0",
+  "name": "test_program",
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+      "accounts": [],
+      "args": []
+    }
+  ],
+  "accounts": [],
+  "events": [
+    {
+      "name": "TradeEvent",
+      "discriminator": [255, 255, 255, 255, 255, 255, 255, 255],
+      "fields": [
+        {
+          "name": "amount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "price",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "SwapEvent",
+      "discriminator": [254, 254, 254, 254, 254, 254, 254, 254],
+      "fields": [
+        {
+          "name": "token_in",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "token_out",
+          "type": "publicKey",
+          "index": false
+        }
+      ]
+    }
+  ]
+}
