@@ -29,17 +29,11 @@ fn test_missing_address_with_override_compiles() {
     let idl_path = test_dir.join("test_missing_address.json");
     let override_path = test_dir.join("test_address_override.json");
 
-    fs::copy(
-        fixture_path("test_missing_address.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_missing_address.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_address_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_address_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code using the CLI with override file
     let output_dir = test_dir.join("generated");
@@ -100,17 +94,11 @@ fn test_program_id_matches_override_value() {
     let idl_path = test_dir.join("test_missing_address.json");
     let override_path = test_dir.join("test_address_override.json");
 
-    fs::copy(
-        fixture_path("test_missing_address.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_missing_address.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_address_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_address_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -167,17 +155,11 @@ fn test_incorrect_address_with_override() {
     let idl_path = test_dir.join("test_incorrect_address.json");
     let override_path = test_dir.join("test_address_correction.json");
 
-    fs::copy(
-        fixture_path("test_incorrect_address.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_incorrect_address.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_address_correction.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_address_correction.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -229,17 +211,11 @@ fn test_warning_shows_original_and_override_address() {
     let idl_path = test_dir.join("test_incorrect_address.json");
     let override_path = test_dir.join("test_address_correction.json");
 
-    fs::copy(
-        fixture_path("test_incorrect_address.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_incorrect_address.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_address_correction.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_address_correction.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Run codegen and capture output
     let output_dir = test_dir.join("generated");
@@ -297,17 +273,10 @@ fn test_account_discriminators_with_override() {
     let idl_path = test_dir.join("test_account_disc.json");
     let override_path = test_dir.join("test_account_override.json");
 
-    fs::copy(
-        fixture_path("test_account_disc.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_account_disc.json"), &idl_path).expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_account_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_account_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -348,17 +317,10 @@ fn test_account_discriminator_constant_matches_override() {
     let idl_path = test_dir.join("test_account_disc.json");
     let override_path = test_dir.join("test_account_override.json");
 
-    fs::copy(
-        fixture_path("test_account_disc.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_account_disc.json"), &idl_path).expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_account_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_account_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -427,14 +389,10 @@ fn test_event_discriminators_with_override() {
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy(fixture_path("test_event_disc.json"), &idl_path)
-        .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_event_disc.json"), &idl_path).expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_event_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_event_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -475,14 +433,10 @@ fn test_event_discriminator_constant_matches_override() {
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy(fixture_path("test_event_disc.json"), &idl_path)
-        .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_event_disc.json"), &idl_path).expect("Failed to copy test IDL");
 
-    fs::copy(
-        fixture_path("test_event_override.json"),
-        &override_path,
-    )
-    .expect("Failed to copy override file");
+    fs::copy(fixture_path("test_event_override.json"), &override_path)
+        .expect("Failed to copy override file");
 
     // Generate code
     let output_dir = test_dir.join("generated");
@@ -550,11 +504,8 @@ fn test_instruction_discriminators_with_override() {
     let idl_path = test_dir.join("test_instruction_disc.json");
     let override_path = test_dir.join("test_instruction_override.json");
 
-    fs::copy(
-        fixture_path("test_instruction_disc.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_instruction_disc.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
     fs::copy(
         fixture_path("test_instruction_override.json"),
@@ -604,11 +555,8 @@ fn test_instruction_discriminator_constant_matches_override() {
     let idl_path = test_dir.join("test_instruction_disc.json");
     let override_path = test_dir.join("test_instruction_override.json");
 
-    fs::copy(
-        fixture_path("test_instruction_disc.json"),
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy(fixture_path("test_instruction_disc.json"), &idl_path)
+        .expect("Failed to copy test IDL");
 
     fs::copy(
         fixture_path("test_instruction_override.json"),

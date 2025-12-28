@@ -16,8 +16,6 @@ release/
 *.log
 .env*
 
-# Override files (examples preserved, user-created gitignored)
-overrides/*
-!overrides/.gitkeep
-!overrides/README.md
-!overrides/*.example.json
+# Override files are committed (production configuration)
+# Only gitignore local testing overrides if needed
+overrides/*.local.json

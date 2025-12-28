@@ -44,7 +44,12 @@ const ZERO_DISCRIMINATOR: [u8; 8] = [0u8; 8];
 pub struct OverrideFile {
     /// Optional program address override (base58-encoded Pubkey)
     /// Matches IDL field name for consistency
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Accepts both "address" and "program_address" for backwards compatibility
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "program_address"
+    )]
     pub address: Option<String>,
 
     /// Account discriminator overrides (account name → discriminator)

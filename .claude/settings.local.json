@@ -28,7 +28,8 @@
       "Bash(just test-all:*)",
       "Skill(speckit.review)",
       "Bash(test:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(just check-all:*)"
     ]
   }
 }

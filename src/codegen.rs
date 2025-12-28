@@ -590,7 +590,9 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
     // Check accounts from accounts array (old format)
     if let Some(accounts) = &idl.accounts {
         for account in accounts {
-            if account.discriminator.is_some() || account.ty.is_some() {
+            // Only generate validation methods if account has a discriminator
+            // (validation methods reference DISCRIMINATOR and try_from_slice_with_discriminator)
+            if account.discriminator.is_some() {
                 let name = format_ident!("{}", account.name);
                 let docs = generate_docs(account.docs.as_ref());
 
