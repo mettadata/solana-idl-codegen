@@ -72,7 +72,7 @@ Create `./overrides/raydium_amm.json`:
 
 ```json
 {
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
   "accounts": {
     "PoolState": {
       "discriminator": [1, 2, 3, 4, 5, 6, 7, 8]
@@ -127,7 +127,7 @@ See [docs/override-format.md](docs/override-format.md) for complete specificatio
 **Minimal Example** (program address only):
 ```json
 {
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
 }
 ```
 
@@ -173,7 +173,7 @@ IDL file doesn't specify on-chain program address:
 
 ```json
 {
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
 }
 ```
 

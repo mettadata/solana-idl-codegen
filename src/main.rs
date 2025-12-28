@@ -38,14 +38,9 @@ fn main() -> Result<()> {
         serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
 
     // T027: Discover and apply override file if present
-    let idl_name = cli
-        .input
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-
+    // Use module name for override discovery (more reliable than IDL filename)
     let override_discovery =
-        r#override::discover_override_file(&cli.input, idl_name, cli.override_file.as_deref())
+        r#override::discover_override_file(&cli.input, &cli.module, cli.override_file.as_deref())
             .context("Failed to discover override file")?;
 
     match override_discovery {

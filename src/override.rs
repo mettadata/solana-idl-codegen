@@ -21,7 +21,7 @@
 //!
 //! ```json
 //! {
-//!   "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+//!   "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
 //!   "accounts": {
 //!     "PoolState": {
 //!       "discriminator": [1, 2, 3, 4, 5, 6, 7, 8]
@@ -43,8 +43,9 @@ const ZERO_DISCRIMINATOR: [u8; 8] = [0u8; 8];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverrideFile {
     /// Optional program address override (base58-encoded Pubkey)
+    /// Matches IDL field name for consistency
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub program_address: Option<String>,
+    pub address: Option<String>,
 
     /// Account discriminator overrides (account name → discriminator)
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -119,7 +120,7 @@ pub enum ValidationError {
 #[derive(Debug, Clone)]
 pub struct AppliedOverride {
     pub override_type: OverrideType,
-    pub entity_name: Option<String>, // None for program_address
+    pub entity_name: Option<String>, // None for address field
     pub original_value: Option<String>,
     pub override_value: String,
 }
@@ -342,7 +343,7 @@ pub fn validate_override_file(
     idl: &crate::idl::Idl,
 ) -> Result<(), ValidationError> {
     // Check that at least one field is non-empty
-    if override_file.program_address.is_none()
+    if override_file.address.is_none()
         && override_file.accounts.is_empty()
         && override_file.events.is_empty()
         && override_file.instructions.is_empty()
@@ -351,7 +352,7 @@ pub fn validate_override_file(
     }
 
     // Validate program address if present
-    if let Some(ref address) = override_file.program_address {
+    if let Some(ref address) = override_file.address {
         // Validate base58 format by attempting to decode
         // Solana Pubkeys are 32 bytes when decoded from base58
         match bs58::decode(address).into_vec() {
@@ -440,14 +441,14 @@ pub fn apply_overrides(
     override_file: &OverrideFile,
 ) -> Result<(crate::idl::Idl, Vec<AppliedOverride>)> {
     // Pre-allocate vector capacity to avoid reallocations
-    let capacity = override_file.program_address.iter().count()
+    let capacity = override_file.address.iter().count()
         + override_file.accounts.len()
         + override_file.events.len()
         + override_file.instructions.len();
     let mut applied = Vec::with_capacity(capacity);
 
     // Apply program address override
-    if let Some(ref new_address) = override_file.program_address {
+    if let Some(ref new_address) = override_file.address {
         let original_value = idl.address.clone();
 
         // Update address field
@@ -580,7 +581,7 @@ mod tests {
         let override_file = temp_path.join("explicit_override.json");
         fs::write(
             &override_file,
-            r#"{"program_address": "11111111111111111111111111111112"}"#,
+            r#"{"address": "11111111111111111111111111111112"}"#,
         )
         .unwrap();
 
@@ -610,7 +611,7 @@ mod tests {
         let override_file = temp_dir.join("test_valid_override.json");
 
         let json_content = r#"{
-            "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+            "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
         }"#;
 
         fs::write(&override_file, json_content).unwrap();
@@ -623,7 +624,7 @@ mod tests {
         assert!(result.is_ok());
         let override_data = result.unwrap();
         assert_eq!(
-            override_data.program_address,
+            override_data.address,
             Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string())
         );
     }
@@ -650,7 +651,7 @@ mod tests {
     #[test]
     fn test_validate_program_address_valid() {
         let override_file = OverrideFile {
-            program_address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
+            address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -678,7 +679,7 @@ mod tests {
     #[test]
     fn test_validate_program_address_invalid_base58() {
         let override_file = OverrideFile {
-            program_address: Some("not-a-valid-pubkey".to_string()),
+            address: Some("not-a-valid-pubkey".to_string()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -708,7 +709,7 @@ mod tests {
     #[test]
     fn test_validate_program_address_system_default() {
         let override_file = OverrideFile {
-            program_address: Some("11111111111111111111111111111111".to_string()),
+            address: Some("11111111111111111111111111111111".to_string()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -742,7 +743,7 @@ mod tests {
     #[test]
     fn test_override_conflicting_address() {
         let override_file = OverrideFile {
-            program_address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
+            address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -789,7 +790,7 @@ mod tests {
         let same_address = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string();
 
         let override_file = OverrideFile {
-            program_address: Some(same_address.clone()),
+            address: Some(same_address.clone()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -825,7 +826,7 @@ mod tests {
     #[test]
     fn test_warning_for_existing_address_override() {
         let override_file = OverrideFile {
-            program_address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
+            address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -888,7 +889,7 @@ mod tests {
     #[test]
     fn test_discriminator_not_all_zeros() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -928,7 +929,7 @@ mod tests {
     fn test_account_discriminator_override_application() {
         // This test will be fully implemented once apply_overrides supports account discriminators
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -952,7 +953,7 @@ mod tests {
     #[test]
     fn test_unknown_account_name_warning() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -1010,7 +1011,7 @@ mod tests {
     #[test]
     fn test_event_discriminator_override_application() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: vec![
                 (
@@ -1082,7 +1083,7 @@ mod tests {
     #[test]
     fn test_unknown_event_name_warning() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: vec![
                 (
@@ -1146,7 +1147,7 @@ mod tests {
     #[test]
     fn test_multiple_event_overrides() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: vec![
                 (
@@ -1238,7 +1239,7 @@ mod tests {
     #[test]
     fn test_instruction_discriminator_override_application() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: vec![
@@ -1321,7 +1322,7 @@ mod tests {
     #[test]
     fn test_unknown_instruction_name_warning() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: vec![
@@ -1405,7 +1406,7 @@ mod tests {
         let convention_override = overrides_dir.join("test_program.json");
         fs::write(
             &convention_override,
-            r#"{"program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"}"#,
+            r#"{"address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"}"#,
         )
         .unwrap();
 
@@ -1413,7 +1414,7 @@ mod tests {
         let global_override = temp_path.join("idl-overrides.json");
         fs::write(
             &global_override,
-            r#"{"program_address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}"#,
+            r#"{"address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}"#,
         )
         .unwrap();
 
@@ -1450,7 +1451,7 @@ mod tests {
     #[test]
     fn test_empty_override_file_error() {
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: HashMap::new(),
             events: HashMap::new(),
             instructions: HashMap::new(),
@@ -1550,7 +1551,7 @@ mod tests {
 
         // Create override file with typo "PoolStat" (missing 'e')
         let override_file = OverrideFile {
-            program_address: None,
+            address: None,
             accounts: vec![(
                 "PoolStat".to_string(), // Typo: should be "PoolState"
                 DiscriminatorOverride {

@@ -13,7 +13,7 @@ Override files are JSON documents with the following structure:
 
 ```json
 {
-  "program_address": "string (optional)",
+  "address": "string (optional)",
   "accounts": { "AccountName": { "discriminator": [u8; 8] } },
   "events": { "EventName": { "discriminator": [u8; 8] } },
   "instructions": { "InstructionName": { "discriminator": [u8; 8] } }
@@ -24,7 +24,7 @@ All fields are optional, but at least one must be present.
 
 ## Field Specifications
 
-### program_address (optional)
+### address (optional)
 
 **Type**: String (base58-encoded Solana Pubkey)
 **Purpose**: Override or add the program's on-chain address
@@ -32,7 +32,7 @@ All fields are optional, but at least one must be present.
 **Example**:
 ```json
 {
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
 }
 ```
 
@@ -120,7 +120,7 @@ All fields are optional, but at least one must be present.
 
 ```json
 {
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
   "accounts": {
     "PoolState": {
       "discriminator": [1, 2, 3, 4, 5, 6, 7, 8]

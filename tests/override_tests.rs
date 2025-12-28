@@ -693,7 +693,7 @@ fn test_multiple_override_files_error() {
 
     // Create convention-based override file
     let convention_override_content = r#"{
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
 }"#;
 
     let convention_override_path = overrides_dir.join("test_program.json");
@@ -702,7 +702,7 @@ fn test_multiple_override_files_error() {
 
     // Create global fallback override file
     let global_override_content = r#"{
-  "program_address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+  "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 }"#;
 
     let global_override_path = test_dir.join("idl-overrides.json");
@@ -805,7 +805,7 @@ fn test_malformed_override_file_error() {
 
     // Create malformed override file (invalid JSON)
     let malformed_override_content = r#"{
-  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
   missing comma and closing brace
 }"#;
 
