@@ -4,7 +4,7 @@ use heck::{ToPascalCase, ToSnakeCase};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solana_idl_codegen::{codegen, idl};
+use solana_idl_codegen::{codegen, idl, r#override};
 
 #[derive(Parser)]
 #[command(name = "solana-idl-codegen")]
@@ -21,6 +21,10 @@ struct Cli {
     /// Module name for generated code
     #[arg(short, long, default_value = "program")]
     module: String,
+
+    /// Path to override file (optional)
+    #[arg(long, value_name = "FILE")]
+    override_file: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -30,7 +34,86 @@ fn main() -> Result<()> {
     let idl_content = fs::read_to_string(&cli.input)
         .context(format!("Failed to read IDL file: {:?}", cli.input))?;
 
-    let idl: idl::Idl = serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
+    let mut idl: idl::Idl =
+        serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
+
+    // T027: Discover and apply override file if present
+    let idl_name = cli
+        .input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+
+    let override_discovery =
+        r#override::discover_override_file(&cli.input, idl_name, cli.override_file.as_deref())
+            .context("Failed to discover override file")?;
+
+    match override_discovery {
+        r#override::OverrideDiscovery::Found(override_path) => {
+            println!("Found override file: {}", override_path.display());
+
+            // T024: Load override file
+            let override_file = r#override::load_override_file(&override_path)
+                .context("Failed to load override file")?;
+
+            // T025: Validate override file
+            let _warnings = r#override::validate_override_file(&override_file, &idl)
+                .context("Override file validation failed")?;
+
+            // T026: Apply overrides to IDL
+            let (modified_idl, applied_overrides) =
+                r#override::apply_overrides(idl, &override_file)
+                    .context("Failed to apply overrides to IDL")?;
+            idl = modified_idl;
+
+            // T028: Log applied overrides
+            if !applied_overrides.is_empty() {
+                println!("Applied {} override(s):", applied_overrides.len());
+                for applied in &applied_overrides {
+                    match applied.override_type {
+                        r#override::OverrideType::ProgramAddress => {
+                            println!(
+                                "  ⚠ Program address: {} → {}",
+                                applied.original_value.as_deref().unwrap_or("(none)"),
+                                applied.override_value
+                            );
+                        }
+                        r#override::OverrideType::AccountDiscriminator => {
+                            println!(
+                                "  Account '{}': discriminator overridden",
+                                applied.entity_name.as_deref().unwrap_or("unknown")
+                            );
+                        }
+                        r#override::OverrideType::EventDiscriminator => {
+                            println!(
+                                "  Event '{}': discriminator overridden",
+                                applied.entity_name.as_deref().unwrap_or("unknown")
+                            );
+                        }
+                        r#override::OverrideType::InstructionDiscriminator => {
+                            println!(
+                                "  Instruction '{}': discriminator overridden",
+                                applied.entity_name.as_deref().unwrap_or("unknown")
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        r#override::OverrideDiscovery::NotFound => {
+            // No override file - continue with original IDL
+        }
+        r#override::OverrideDiscovery::Conflict { files, sources } => {
+            eprintln!("ERROR: Multiple override files detected:");
+            for (file, source) in files.iter().zip(sources.iter()) {
+                eprintln!("  - {} ({})", file.display(), source);
+            }
+            eprintln!(
+                "\nPlease remove conflicting override files or use --override-file to specify which one to use."
+            );
+            anyhow::bail!("Multiple override files detected");
+        }
+    }
 
     println!("Successfully parsed IDL for program: {}", idl.get_name());
     println!("Version: {}", idl.get_version());

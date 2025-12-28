@@ -1,2 +1,23 @@
 target/
 generated/
+
+# Rust build artifacts
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDE
+.idea/
+.vscode/
+
+# Logs and environment
+*.log
+.env*
+
+# Override files (examples preserved, user-created gitignored)
+overrides/*
+!overrides/.gitkeep
+!overrides/README.md
+!overrides/*.example.json
