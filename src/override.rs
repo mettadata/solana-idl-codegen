@@ -136,29 +136,31 @@ use std::path::Path;
 /// Discover override file location using convention-based search or explicit path
 ///
 /// # Discovery Order
-/// 1. If `explicit_override` provided: check if it exists and detect conflicts with convention
+/// 1. If `explicit_override` provided: use that exclusively (highest priority, bypasses convention)
 /// 2. Convention-based: check `./overrides/{idl_name}.json`
 /// 3. Global fallback: check `./idl-overrides.json`
 ///
 /// # Returns
 /// - `OverrideDiscovery::Found(path)` if override file found
 /// - `OverrideDiscovery::NotFound` if no override file found (not an error)
-/// - `OverrideDiscovery::Conflict` if multiple override files detected
+/// - `OverrideDiscovery::Conflict` if multiple convention-based override files detected
 pub fn discover_override_file(
     _idl_path: &Path,
     idl_name: &str,
     explicit_override: Option<&Path>,
 ) -> Result<OverrideDiscovery> {
-    let mut found_files = Vec::new();
-    let mut sources = Vec::new();
-
-    // Check explicit override file
+    // If explicit override provided, use it exclusively (highest priority)
     if let Some(explicit_path) = explicit_override {
         if explicit_path.exists() {
-            found_files.push(explicit_path.to_path_buf());
-            sources.push("explicit CLI --override-file".to_string());
+            return Ok(OverrideDiscovery::Found(explicit_path.to_path_buf()));
+        } else {
+            return Ok(OverrideDiscovery::NotFound);
         }
     }
+
+    // Otherwise, check convention-based discovery
+    let mut found_files = Vec::new();
+    let mut sources = Vec::new();
 
     // Check convention-based per-IDL file: ./overrides/{idl_name}.json
     let convention_path = PathBuf::from(format!("./overrides/{}.json", idl_name));
@@ -218,7 +220,6 @@ pub fn validate_override_file(
     override_file: &OverrideFile,
     idl: &crate::idl::Idl,
 ) -> Result<(), ValidationError> {
-
     // Check that at least one field is non-empty
     if override_file.program_address.is_none()
         && override_file.accounts.is_empty()
@@ -342,7 +343,8 @@ pub fn validate_override_file(
 
     // T081 [US5]: Check instruction names exist in IDL (errors for unknown names)
     if !idl.instructions.is_empty() {
-        let instruction_names: Vec<&str> = idl.instructions.iter().map(|i| i.name.as_str()).collect();
+        let instruction_names: Vec<&str> =
+            idl.instructions.iter().map(|i| i.name.as_str()).collect();
 
         for instruction_name in override_file.instructions.keys() {
             if !instruction_names.contains(&instruction_name.as_str()) {
@@ -511,37 +513,37 @@ mod tests {
         assert!(matches!(result, OverrideDiscovery::NotFound));
     }
 
-    /// T013 [P] [US1] Unit test for discover_override_file with found file
+    /// T013 [P] [US1] Unit test for discover_override_file with explicit override
     #[test]
     fn test_discover_override_file_found() {
-        let temp_dir = std::env::temp_dir();
-        // Create the correct convention-based directory: ./overrides/
-        let overrides_dir = temp_dir.join("overrides");
-        fs::create_dir_all(&overrides_dir).unwrap();
+        use tempfile::TempDir;
 
-        let override_file = overrides_dir.join("test_idl.json");
+        // Create unique temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create explicit override file
+        let override_file = temp_path.join("explicit_override.json");
         fs::write(
             &override_file,
             r#"{"program_address": "11111111111111111111111111111112"}"#,
         )
         .unwrap();
 
-        let idl_path = temp_dir.join("test_idl.json");
+        let idl_path = temp_path.join("test_idl.json");
         let idl_name = "test_idl";
 
-        // Change to the temp directory temporarily
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
+        // Test with explicit override path (highest priority)
+        let result = discover_override_file(&idl_path, idl_name, Some(&override_file)).unwrap();
 
-        let result = discover_override_file(&idl_path, idl_name, None).unwrap();
-
-        // Restore original directory
-        std::env::set_current_dir(original_dir).unwrap();
-
-        // Clean up
-        fs::remove_file(&override_file).ok();
-
+        // Should find the explicit override file
         assert!(matches!(result, OverrideDiscovery::Found(_)));
+        match result {
+            OverrideDiscovery::Found(path) => {
+                assert_eq!(path, override_file, "Should return the explicit override path");
+            }
+            _ => panic!("Expected Found, got {:?}", result),
+        }
     }
 
     /// T014 [P] [US1] Unit test for load_override_file with valid JSON
@@ -929,7 +931,12 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ValidationError::UnknownEntity { .. }));
 
-        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+        if let ValidationError::UnknownEntity {
+            entity_type,
+            entity_name,
+            available,
+        } = err
+        {
             assert_eq!(entity_type, "account");
             assert_eq!(entity_name, "NonExistentAccount");
             assert!(available.contains("none"));
@@ -1061,7 +1068,12 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ValidationError::UnknownEntity { .. }));
 
-        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+        if let ValidationError::UnknownEntity {
+            entity_type,
+            entity_name,
+            available,
+        } = err
+        {
             assert_eq!(entity_type, "event");
             assert_eq!(entity_name, "UnknownEvent");
             assert!(available.contains("TradeEvent"));
@@ -1294,7 +1306,12 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ValidationError::UnknownEntity { .. }));
 
-        if let ValidationError::UnknownEntity { entity_type, entity_name, available } = err {
+        if let ValidationError::UnknownEntity {
+            entity_type,
+            entity_name,
+            available,
+        } = err
+        {
             assert_eq!(entity_type, "instruction");
             assert_eq!(entity_name, "UnknownInstruction");
             assert!(available.contains("Initialize"));
@@ -1340,12 +1357,8 @@ mod tests {
         std::env::set_current_dir(temp_path).unwrap();
 
         // Test conflict detection
-        let result = discover_override_file(
-            Path::new("test_program.json"),
-            "test_program",
-            None,
-        )
-        .unwrap();
+        let result =
+            discover_override_file(Path::new("test_program.json"), "test_program", None).unwrap();
 
         // Restore original directory
         std::env::set_current_dir(original_dir).unwrap();

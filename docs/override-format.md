@@ -64,7 +64,7 @@ All fields are optional, but at least one must be present.
 - Account names must match IDL exactly (case-sensitive)
 - Discriminators must be exactly 8 bytes (u8 array)
 - Discriminators cannot be all zeros: `[0, 0, 0, 0, 0, 0, 0, 0]`
-- Unknown account names generate warnings but don't fail validation
+- Unknown account names cause validation errors (fail-fast to catch typos)
 
 ### events (optional)
 
@@ -85,7 +85,11 @@ All fields are optional, but at least one must be present.
 }
 ```
 
-**Validation Rules**: Same as accounts
+**Validation Rules**:
+- Event names must match IDL exactly (case-sensitive)
+- Discriminators must be exactly 8 bytes (u8 array)
+- Discriminators cannot be all zeros
+- Unknown event names cause validation errors (fail-fast to catch typos)
 
 ### instructions (optional)
 
@@ -106,7 +110,11 @@ All fields are optional, but at least one must be present.
 }
 ```
 
-**Validation Rules**: Same as accounts
+**Validation Rules**:
+- Instruction names must match IDL exactly (case-sensitive)
+- Discriminators must be exactly 8 bytes (u8 array)
+- Discriminators cannot be all zeros
+- Unknown instruction names cause validation errors (fail-fast to catch typos)
 
 ## Complete Example
 

@@ -19,7 +19,13 @@
       "Bash(if [ -d \"/home/utx0/Code/MettaData.com/pandora/idl/solana-idl-codegen/specs/001-idl-override/checklists\" ])",
       "Bash(then echo \"EXISTS\")",
       "Bash(else echo \"NOT_FOUND\")",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(ls:*)",
+      "Bash(for:*)",
+      "Bash(do echo \"=== Run $i ===\")",
+      "Bash(done)",
+      "Bash(just test:*)",
+      "Bash(just test-all:*)"
     ]
   }
 }

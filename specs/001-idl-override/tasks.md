@@ -257,18 +257,18 @@
 
 **Purpose**: Improvements that affect multiple user stories, documentation, and final validation
 
-- [ ] T099 [P] Write override file format documentation in `docs/override-format.md`
-- [ ] T100 [P] Add override system usage examples to main `README.md`
-- [ ] T101 [P] Create example override files for common scenarios in `overrides/` directory
-- [ ] T102 [P] Update `CLAUDE.md` with override system documentation
-- [ ] T103 [P] Add override file schema documentation to `docs/override-format.md`
-- [ ] T104 Code cleanup and refactoring in `src/override.rs` (remove dead code, improve naming)
-- [ ] T105 [P] Run `cargo fmt` and `cargo clippy -- -D warnings` on all code
+- [x] T099 [P] Write override file format documentation in `docs/override-format.md`
+- [x] T100 [P] Add override system usage examples to main `README.md`
+- [x] T101 [P] Create example override files for common scenarios in `overrides/` directory
+- [x] T102 [P] Update `CLAUDE.md` with override system documentation
+- [x] T103 [P] Add override file schema documentation to `docs/override-format.md`
+- [x] T104 Code cleanup and refactoring in `src/override.rs` (remove dead code, improve naming)
+- [x] T105 [P] Run `cargo fmt` and `cargo clippy -- -D warnings` on all code
 - [ ] T106 [P] Verify comprehensive unit test coverage (MANDATORY - Constitution Principle VIII): `cargo tarpaulin`
-- [ ] T107 [P] Verify comprehensive integration test coverage (MANDATORY - Constitution Principles III & VIII): `just test-integration`
+- [x] T107 [P] Verify comprehensive integration test coverage (MANDATORY - Constitution Principles III & VIII): `just test-integration`
 - [ ] T108 [P] Run quickstart.md validation (test all examples work): `bash test-quickstart.sh`
-- [ ] T109 [P] Performance validation: verify override overhead <5% in benchmarks
-- [ ] T110 Run complete test suite: `just test-all` (unit + integration)
+- [x] T109 [P] Performance validation: verify override overhead <5% in benchmarks
+- [x] T110 Run complete test suite: `just test-all` (unit + integration)
 
 ---
 

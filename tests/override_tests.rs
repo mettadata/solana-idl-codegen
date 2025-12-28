@@ -425,11 +425,8 @@ fn test_event_discriminators_with_override() {
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy(
-        "tests/integration/fixtures/test_event_disc.json",
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy("tests/integration/fixtures/test_event_disc.json", &idl_path)
+        .expect("Failed to copy test IDL");
 
     fs::copy(
         "tests/integration/fixtures/test_event_override.json",
@@ -477,11 +474,8 @@ fn test_event_discriminator_constant_matches_override() {
     let idl_path = test_dir.join("test_event_disc.json");
     let override_path = test_dir.join("test_event_override.json");
 
-    fs::copy(
-        "tests/integration/fixtures/test_event_disc.json",
-        &idl_path,
-    )
-    .expect("Failed to copy test IDL");
+    fs::copy("tests/integration/fixtures/test_event_disc.json", &idl_path)
+        .expect("Failed to copy test IDL");
 
     fs::copy(
         "tests/integration/fixtures/test_event_override.json",
@@ -521,7 +515,9 @@ fn test_event_discriminator_constant_matches_override() {
         "Generated events.rs does not contain TradeEvent struct"
     );
     assert!(
-        events_rs_content.contains("const TRADE_EVENT_EVENT_DISCM: [u8; 8] = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]"),
+        events_rs_content.contains(
+            "const TRADE_EVENT_EVENT_DISCM: [u8; 8] = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]"
+        ),
         "TradeEvent discriminator constant does not match override value [1, 2, 3, 4, 5, 6, 7, 8]"
     );
 
@@ -589,7 +585,10 @@ fn test_instruction_discriminators_with_override() {
         .join("test_program")
         .join("src")
         .join("instructions.rs");
-    assert!(instructions_rs.exists(), "Generated instructions.rs not found");
+    assert!(
+        instructions_rs.exists(),
+        "Generated instructions.rs not found"
+    );
 
     // Clean up
     let _ = fs::remove_dir_all(&test_dir);
@@ -641,8 +640,8 @@ fn test_instruction_discriminator_constant_matches_override() {
         .join("test_program")
         .join("src")
         .join("instructions.rs");
-    let instructions_rs_content =
-        fs::read_to_string(&instructions_rs_path).expect("Failed to read generated instructions.rs");
+    let instructions_rs_content = fs::read_to_string(&instructions_rs_path)
+        .expect("Failed to read generated instructions.rs");
 
     // Verify Initialize instruction discriminator matches override [1, 2, 3, 4, 5, 6, 7, 8]
     // Instructions use discriminator bytes directly in match statements
@@ -745,7 +744,8 @@ fn test_multiple_override_files_error() {
         stderr
     );
     assert!(
-        stderr.contains("convention-based discovery") || stderr.contains("overrides/test_program.json"),
+        stderr.contains("convention-based discovery")
+            || stderr.contains("overrides/test_program.json"),
         "Error should mention convention-based file. stderr: {}",
         stderr
     );
@@ -851,8 +851,7 @@ fn test_empty_override_file_error() {
     let empty_override_content = r#"{}"#;
 
     let override_path = test_dir.join("override.json");
-    fs::write(&override_path, empty_override_content)
-        .expect("Failed to write empty override file");
+    fs::write(&override_path, empty_override_content).expect("Failed to write empty override file");
 
     // Run codegen with explicit override file - should fail with empty file error
     let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
@@ -877,7 +876,8 @@ fn test_empty_override_file_error() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Empty override file") || stderr.contains("must contain at least one override"),
+        stderr.contains("Empty override file")
+            || stderr.contains("must contain at least one override"),
         "Error should mention empty override file. stderr: {}",
         stderr
     );
