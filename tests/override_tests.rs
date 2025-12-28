@@ -7,6 +7,7 @@
 //! - Verification that generated code compiles and uses override values
 
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 /// T019 [P] [US1] Integration test: IDL with missing address + override → generated code compiles
@@ -656,6 +657,229 @@ fn test_instruction_discriminator_constant_matches_override() {
         instructions_rs_content.contains("[11, 12, 13, 14, 15, 16, 17, 18]")
             || instructions_rs_content.contains("[11u8, 12u8, 13u8, 14u8, 15u8, 16u8, 17u8, 18u8]"),
         "Trade instruction discriminator does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+// ====================
+// Phase 8: Edge Cases & Error Handling Integration Tests
+// ====================
+
+/// T091 [P] Integration test: multiple override files detected error
+#[test]
+fn test_multiple_override_files_error() {
+    let test_dir = PathBuf::from("/tmp/idl_override_test_multiple_files");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Create overrides directory
+    let overrides_dir = test_dir.join("overrides");
+    fs::create_dir_all(&overrides_dir).expect("Failed to create overrides directory");
+
+    // Create test IDL file (minimal)
+    let idl_content = r#"{
+  "version": "0.1.0",
+  "name": "test_program",
+  "instructions": [
+    {
+      "name": "Initialize",
+      "accounts": [],
+      "args": []
+    }
+  ]
+}"#;
+
+    let idl_path = test_dir.join("test_program.json");
+    fs::write(&idl_path, idl_content).expect("Failed to write IDL file");
+
+    // Create convention-based override file
+    let convention_override_content = r#"{
+  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+}"#;
+
+    let convention_override_path = overrides_dir.join("test_program.json");
+    fs::write(&convention_override_path, convention_override_content)
+        .expect("Failed to write convention override file");
+
+    // Create global fallback override file
+    let global_override_content = r#"{
+  "program_address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+}"#;
+
+    let global_override_path = test_dir.join("idl-overrides.json");
+    fs::write(&global_override_path, global_override_content)
+        .expect("Failed to write global override file");
+
+    // Change to test directory
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&test_dir).expect("Failed to change to test directory");
+
+    // Run codegen - should fail with conflict error
+    let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args(&[
+            "-i",
+            "test_program.json",
+            "-o",
+            "generated",
+            "-m",
+            "test_program",
+        ])
+        .output()
+        .expect("Failed to execute codegen");
+
+    // Restore original directory
+    std::env::set_current_dir(original_dir).expect("Failed to restore directory");
+
+    // Verify the error occurred
+    assert!(
+        !output.status.success(),
+        "Codegen should fail with multiple override files conflict"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Multiple override files detected"),
+        "Error should mention multiple override files. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("convention-based discovery") || stderr.contains("overrides/test_program.json"),
+        "Error should mention convention-based file. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("global fallback") || stderr.contains("idl-overrides.json"),
+        "Error should mention global fallback file. stderr: {}",
+        stderr
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T092 [P] Integration test: malformed override file fails gracefully
+#[test]
+fn test_malformed_override_file_error() {
+    let test_dir = PathBuf::from("/tmp/idl_override_test_malformed");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Create test IDL file (minimal)
+    let idl_content = r#"{
+  "version": "0.1.0",
+  "name": "test_program",
+  "instructions": [
+    {
+      "name": "Initialize",
+      "accounts": [],
+      "args": []
+    }
+  ]
+}"#;
+
+    let idl_path = test_dir.join("test_program.json");
+    fs::write(&idl_path, idl_content).expect("Failed to write IDL file");
+
+    // Create malformed override file (invalid JSON)
+    let malformed_override_content = r#"{
+  "program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+  missing comma and closing brace
+}"#;
+
+    let override_path = test_dir.join("override.json");
+    fs::write(&override_path, malformed_override_content)
+        .expect("Failed to write malformed override file");
+
+    // Run codegen with explicit override file - should fail with parse error
+    let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args(&[
+            "-i",
+            idl_path.to_str().unwrap(),
+            "-o",
+            test_dir.join("generated").to_str().unwrap(),
+            "-m",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute codegen");
+
+    // Verify the error occurred
+    assert!(
+        !output.status.success(),
+        "Codegen should fail with malformed JSON"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Failed to parse override file JSON") || stderr.contains("JSON"),
+        "Error should mention JSON parsing failure. stderr: {}",
+        stderr
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T093 [P] Integration test: empty override file error
+#[test]
+fn test_empty_override_file_error() {
+    let test_dir = PathBuf::from("/tmp/idl_override_test_empty");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Create test IDL file (minimal)
+    let idl_content = r#"{
+  "version": "0.1.0",
+  "name": "test_program",
+  "instructions": [
+    {
+      "name": "Initialize",
+      "accounts": [],
+      "args": []
+    }
+  ]
+}"#;
+
+    let idl_path = test_dir.join("test_program.json");
+    fs::write(&idl_path, idl_content).expect("Failed to write IDL file");
+
+    // Create empty override file (valid JSON but no overrides)
+    let empty_override_content = r#"{}"#;
+
+    let override_path = test_dir.join("override.json");
+    fs::write(&override_path, empty_override_content)
+        .expect("Failed to write empty override file");
+
+    // Run codegen with explicit override file - should fail with empty file error
+    let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args(&[
+            "-i",
+            idl_path.to_str().unwrap(),
+            "-o",
+            test_dir.join("generated").to_str().unwrap(),
+            "-m",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute codegen");
+
+    // Verify the error occurred
+    assert!(
+        !output.status.success(),
+        "Codegen should fail with empty override file"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Empty override file") || stderr.contains("must contain at least one override"),
+        "Error should mention empty override file. stderr: {}",
+        stderr
     );
 
     // Clean up

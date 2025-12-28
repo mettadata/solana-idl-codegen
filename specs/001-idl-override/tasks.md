@@ -232,24 +232,24 @@
 
 ### Unit Tests (MANDATORY)
 
-- [ ] T087 [P] Unit test for multiple override files detected (Conflict error) in `src/override.rs` tests module
-- [ ] T088 [P] Unit test for empty override file (EmptyOverrideFile error) in `src/override.rs` tests module
-- [ ] T089 [P] Unit test for malformed JSON error handling in `src/override.rs` tests module
-- [ ] T090 [P] Unit test for file not found error handling in `src/override.rs` tests module
+- [x] T087 [P] Unit test for multiple override files detected (Conflict error) in `src/override.rs` tests module
+- [x] T088 [P] Unit test for empty override file (EmptyOverrideFile error) in `src/override.rs` tests module
+- [x] T089 [P] Unit test for malformed JSON error handling in `src/override.rs` tests module
+- [x] T090 [P] Unit test for file not found error handling in `src/override.rs` tests module
 
 ### Integration Tests (MANDATORY)
 
-- [ ] T091 [P] Integration test: multiple override files detected error in `tests/integration/override_tests.rs`
-- [ ] T092 [P] Integration test: malformed override file fails gracefully in `tests/integration/override_tests.rs`
-- [ ] T093 [P] Integration test: empty override file error in `tests/integration/override_tests.rs`
+- [x] T091 [P] Integration test: multiple override files detected error in `tests/integration/override_tests.rs`
+- [x] T092 [P] Integration test: malformed override file fails gracefully in `tests/integration/override_tests.rs`
+- [x] T093 [P] Integration test: empty override file error in `tests/integration/override_tests.rs`
 
 ### Implementation
 
-- [ ] T094 Implement multiple override file detection in `discover_override_file()` in `src/override.rs`
-- [ ] T095 [P] Implement empty override file validation in `validate_override_file()` in `src/override.rs`
-- [ ] T096 [P] Add comprehensive error context to all file operations in `src/override.rs`
-- [ ] T097 [P] Implement conflict error message formatting in `src/override.rs`
-- [ ] T098 Verify all edge case tests pass: `cargo test --lib override`
+- [x] T094 Implement multiple override file detection in `discover_override_file()` in `src/override.rs`
+- [x] T095 [P] Implement empty override file validation in `validate_override_file()` in `src/override.rs`
+- [x] T096 [P] Add comprehensive error context to all file operations in `src/override.rs`
+- [x] T097 [P] Implement conflict error message formatting in `src/override.rs`
+- [x] T098 Verify all edge case tests pass: `cargo test --lib override`
 
 ---
 

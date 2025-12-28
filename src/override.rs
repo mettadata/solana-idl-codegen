@@ -1300,4 +1300,151 @@ mod tests {
             assert!(available.contains("Initialize"));
         }
     }
+
+    // ====================
+    // Phase 8 Tests: Edge Cases & Error Handling
+    // ====================
+
+    /// T087 [P] Unit test for multiple override files detected (Conflict error)
+    #[test]
+    fn test_multiple_override_files_conflict() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create overrides directory
+        let overrides_dir = temp_path.join("overrides");
+        fs::create_dir_all(&overrides_dir).unwrap();
+
+        // Create convention-based override file
+        let convention_override = overrides_dir.join("test_program.json");
+        fs::write(
+            &convention_override,
+            r#"{"program_address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"}"#,
+        )
+        .unwrap();
+
+        // Create global fallback override file
+        let global_override = temp_path.join("idl-overrides.json");
+        fs::write(
+            &global_override,
+            r#"{"program_address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}"#,
+        )
+        .unwrap();
+
+        // Change to temp directory
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_path).unwrap();
+
+        // Test conflict detection
+        let result = discover_override_file(
+            Path::new("test_program.json"),
+            "test_program",
+            None,
+        )
+        .unwrap();
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        // Verify conflict was detected
+        match result {
+            OverrideDiscovery::Conflict { files, sources } => {
+                assert_eq!(files.len(), 2, "Should detect 2 conflicting override files");
+                assert_eq!(sources.len(), 2, "Should have 2 sources");
+                assert!(
+                    sources.contains(&"convention-based discovery".to_string()),
+                    "Should include convention-based source"
+                );
+                assert!(
+                    sources.contains(&"global fallback".to_string()),
+                    "Should include global fallback source"
+                );
+            }
+            _ => panic!("Expected Conflict, got {:?}", result),
+        }
+    }
+
+    /// T088 [P] Unit test for empty override file (EmptyOverrideFile error)
+    #[test]
+    fn test_empty_override_file_error() {
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        let idl = crate::idl::Idl {
+            address: None,
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_err(), "Empty override file should return error");
+
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ValidationError::EmptyOverrideFile),
+            "Should be EmptyOverrideFile error"
+        );
+    }
+
+    /// T089 [P] Unit test for malformed JSON error handling
+    #[test]
+    fn test_malformed_json_error() {
+        use tempfile::NamedTempFile;
+
+        // Create temporary file with malformed JSON
+        let mut temp_file = NamedTempFile::new().unwrap();
+        use std::io::Write;
+        temp_file
+            .write_all(b"{invalid json missing quotes and commas}")
+            .unwrap();
+
+        let result = load_override_file(temp_file.path());
+        assert!(
+            result.is_err(),
+            "Malformed JSON should return error: {:?}",
+            result
+        );
+
+        // Verify error message contains helpful context
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("Failed to parse override file JSON"),
+            "Error should mention JSON parsing failure"
+        );
+    }
+
+    /// T090 [P] Unit test for file not found error handling
+    #[test]
+    fn test_file_not_found_error() {
+        let non_existent_path = Path::new("/tmp/this_file_definitely_does_not_exist_12345.json");
+
+        let result = load_override_file(non_existent_path);
+        assert!(
+            result.is_err(),
+            "Non-existent file should return error: {:?}",
+            result
+        );
+
+        // Verify error message contains helpful context
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("Failed to read override file"),
+            "Error should mention file reading failure"
+        );
+    }
 }
