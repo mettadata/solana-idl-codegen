@@ -103,11 +103,12 @@ pub enum ValidationError {
     #[error("Empty override file: must contain at least one override")]
     EmptyOverrideFile,
 
-    #[error("Unknown {entity_type} '{entity_name}' in override file. Available: {available}")]
+    #[error("Unknown {entity_type} '{entity_name}' in override file. Available: {available}{suggestion}")]
     UnknownEntity {
         entity_type: String,
         entity_name: String,
         available: String,
+        suggestion: String,
     },
 }
 
@@ -227,6 +228,42 @@ fn validate_discriminators(
     Ok(())
 }
 
+/// Build a suggestion for a typo using Jaro-Winkler distance
+///
+/// # Arguments
+/// - `unknown`: The unknown entity name from the override file
+/// - `available`: List of valid entity names from the IDL
+///
+/// # Returns
+/// - A suggestion string in the format "\nDid you mean 'name'?" if a close match is found
+/// - Empty string if no close match exists
+fn build_suggestion(unknown: &str, available: &[&str]) -> String {
+    if available.is_empty() {
+        return String::new();
+    }
+
+    // Find closest match using Jaro-Winkler distance
+    let closest = available
+        .iter()
+        .max_by(|a, b| {
+            let dist_a = strsim::jaro_winkler(unknown, a);
+            let dist_b = strsim::jaro_winkler(unknown, b);
+            dist_a
+                .partial_cmp(&dist_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap();
+
+    let similarity = strsim::jaro_winkler(unknown, closest);
+
+    // Only suggest if similarity is > 0.8 (likely typo)
+    if similarity > 0.8 {
+        format!("\nDid you mean '{}'?", closest)
+    } else {
+        String::new()
+    }
+}
+
 /// Validate that entity names exist in the IDL
 ///
 /// # Arguments
@@ -252,14 +289,19 @@ fn validate_entity_names(
             // Check each override name exists in IDL
             for override_name in override_names {
                 if !names.contains(&override_name.as_str()) {
+                    let available = if names.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        names.join(", ")
+                    };
+
+                    let suggestion = build_suggestion(override_name.as_str(), names);
+
                     return Err(ValidationError::UnknownEntity {
                         entity_type: entity_type.to_string(),
                         entity_name: override_name.clone(),
-                        available: if names.is_empty() {
-                            "(none)".to_string()
-                        } else {
-                            names.join(", ")
-                        },
+                        available,
+                        suggestion,
                     });
                 }
             }
@@ -273,6 +315,7 @@ fn validate_entity_names(
                 entity_type: entity_type.to_string(),
                 entity_name: first_name.clone(),
                 available: format!("(none - IDL has no {}s defined)", entity_type),
+                suggestion: String::new(), // No suggestion when IDL has no entities
             })
         }
     }
@@ -934,11 +977,13 @@ mod tests {
             entity_type,
             entity_name,
             available,
+            suggestion,
         } = err
         {
             assert_eq!(entity_type, "account");
             assert_eq!(entity_name, "NonExistentAccount");
             assert!(available.contains("none"));
+            assert_eq!(suggestion, ""); // No suggestion when IDL has no accounts
         }
     }
 
@@ -1071,11 +1116,14 @@ mod tests {
             entity_type,
             entity_name,
             available,
+            suggestion,
         } = err
         {
             assert_eq!(entity_type, "event");
             assert_eq!(entity_name, "UnknownEvent");
             assert!(available.contains("TradeEvent"));
+            // No strong similarity expected between "UnknownEvent" and "TradeEvent"
+            let _ = suggestion; // Acknowledge field exists
         }
     }
 
@@ -1309,11 +1357,14 @@ mod tests {
             entity_type,
             entity_name,
             available,
+            suggestion,
         } = err
         {
             assert_eq!(entity_type, "instruction");
             assert_eq!(entity_name, "UnknownInstruction");
             assert!(available.contains("Initialize"));
+            // No strong similarity expected between "UnknownInstruction" and "Initialize"
+            let _ = suggestion; // Acknowledge field exists
         }
     }
 
@@ -1458,5 +1509,68 @@ mod tests {
             err_msg.contains("Failed to read override file"),
             "Error should mention file reading failure"
         );
+    }
+
+    /// T091 [P] Unit test for typo suggestion feature
+    #[test]
+    fn test_typo_suggestion_in_unknown_entity_error() {
+        // Create IDL with account named "PoolState"
+        let idl = crate::idl::Idl {
+            address: None,
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: Some(vec![crate::idl::Account {
+                name: "PoolState".to_string(),
+                discriminator: None,
+                docs: None,
+                ty: None,
+            }]),
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        // Create override file with typo "PoolStat" (missing 'e')
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: vec![(
+                "PoolStat".to_string(), // Typo: should be "PoolState"
+                DiscriminatorOverride {
+                    discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+                },
+            )]
+            .into_iter()
+            .collect(),
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        // Validation should fail with UnknownEntity error containing suggestion
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, ValidationError::UnknownEntity { .. }));
+
+        if let ValidationError::UnknownEntity {
+            entity_type,
+            entity_name,
+            available,
+            suggestion,
+        } = err
+        {
+            assert_eq!(entity_type, "account");
+            assert_eq!(entity_name, "PoolStat");
+            assert!(available.contains("PoolState"));
+            // Verify suggestion is provided (Jaro-Winkler similarity > 0.8)
+            assert!(
+                suggestion.contains("Did you mean 'PoolState'?"),
+                "Expected suggestion for typo 'PoolStat' -> 'PoolState', got: '{}'",
+                suggestion
+            );
+        }
     }
 }
