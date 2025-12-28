@@ -25,7 +25,8 @@
       "Bash(do echo \"=== Run $i ===\")",
       "Bash(done)",
       "Bash(just test:*)",
-      "Bash(just test-all:*)"
+      "Bash(just test-all:*)",
+      "Skill(speckit.review)"
     ]
   }
 }

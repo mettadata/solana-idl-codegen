@@ -203,6 +203,81 @@ pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
     Ok(override_file)
 }
 
+/// Validate that discriminators are not all zeros
+///
+/// # Arguments
+/// - `entity_type`: Type of entity ("account", "event", "instruction")
+/// - `overrides`: Map of entity name to discriminator override
+///
+/// # Returns
+/// - `Ok(())` if all discriminators are valid
+/// - `Err(ValidationError::AllZeroDiscriminator)` if any discriminator is all zeros
+fn validate_discriminators(
+    entity_type: &str,
+    overrides: &std::collections::HashMap<String, DiscriminatorOverride>,
+) -> Result<(), ValidationError> {
+    for (name, disc_override) in overrides {
+        if disc_override.discriminator == [0u8; 8] {
+            return Err(ValidationError::AllZeroDiscriminator {
+                entity_type: entity_type.to_string(),
+                entity_name: name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Validate that entity names exist in the IDL
+///
+/// # Arguments
+/// - `entity_type`: Type of entity ("account", "event", "instruction")
+/// - `override_names`: Names from the override file to validate
+/// - `idl_names`: Optional list of valid names from the IDL
+///
+/// # Returns
+/// - `Ok(())` if all entity names are valid
+/// - `Err(ValidationError::UnknownEntity)` if any name doesn't exist in IDL
+fn validate_entity_names(
+    entity_type: &str,
+    override_names: &[String],
+    idl_names: Option<&[&str]>,
+) -> Result<(), ValidationError> {
+    // If no overrides, nothing to validate
+    if override_names.is_empty() {
+        return Ok(());
+    }
+
+    match idl_names {
+        Some(names) => {
+            // Check each override name exists in IDL
+            for override_name in override_names {
+                if !names.contains(&override_name.as_str()) {
+                    return Err(ValidationError::UnknownEntity {
+                        entity_type: entity_type.to_string(),
+                        entity_name: override_name.clone(),
+                        available: if names.is_empty() {
+                            "(none)".to_string()
+                        } else {
+                            names.join(", ")
+                        },
+                    });
+                }
+            }
+            Ok(())
+        }
+        None => {
+            // IDL has no entities of this type but override file has overrides
+            // Return error for the first override name
+            let first_name = &override_names[0];
+            Err(ValidationError::UnknownEntity {
+                entity_type: entity_type.to_string(),
+                entity_name: first_name.clone(),
+                available: format!("(none - IDL has no {}s defined)", entity_type),
+            })
+        }
+    }
+}
+
 /// Validate override file structure and values
 ///
 /// # Returns
@@ -256,119 +331,40 @@ pub fn validate_override_file(
         }
     }
 
-    // Validate discriminators (will be expanded in US3)
-    // For now, just check they're not all zeros
-    for (name, disc_override) in &override_file.accounts {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "account".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
+    // Validate discriminators are not all zeros
+    validate_discriminators("account", &override_file.accounts)?;
+    validate_discriminators("event", &override_file.events)?;
+    validate_discriminators("instruction", &override_file.instructions)?;
 
-    for (name, disc_override) in &override_file.events {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "event".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
+    // T056 [US3]: Validate account names exist in IDL
+    let account_names: Option<Vec<&str>> = idl
+        .accounts
+        .as_ref()
+        .map(|accounts| accounts.iter().map(|a| a.name.as_str()).collect());
+    let override_account_names: Vec<String> = override_file.accounts.keys().cloned().collect();
+    validate_entity_names("account", &override_account_names, account_names.as_deref())?;
 
-    for (name, disc_override) in &override_file.instructions {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "instruction".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
+    // T069 [US4]: Validate event names exist in IDL
+    let event_names: Option<Vec<&str>> = idl
+        .events
+        .as_ref()
+        .map(|events| events.iter().map(|e| e.name.as_str()).collect());
+    let override_event_names: Vec<String> = override_file.events.keys().cloned().collect();
+    validate_entity_names("event", &override_event_names, event_names.as_deref())?;
 
-    // T056 [US3]: Check account names exist in IDL (errors for unknown names)
-    if let Some(ref accounts) = idl.accounts {
-        let account_names: Vec<&str> = accounts.iter().map(|a| a.name.as_str()).collect();
-
-        for account_name in override_file.accounts.keys() {
-            if !account_names.contains(&account_name.as_str()) {
-                return Err(ValidationError::UnknownEntity {
-                    entity_type: "account".to_string(),
-                    entity_name: account_name.clone(),
-                    available: if account_names.is_empty() {
-                        "(none)".to_string()
-                    } else {
-                        account_names.join(", ")
-                    },
-                });
-            }
-        }
-    } else if !override_file.accounts.is_empty() {
-        // IDL has no accounts but override file has account overrides
-        // Return error for the first account name
-        let first_account = override_file.accounts.keys().next().unwrap();
-        return Err(ValidationError::UnknownEntity {
-            entity_type: "account".to_string(),
-            entity_name: first_account.clone(),
-            available: "(none - IDL has no accounts defined)".to_string(),
-        });
-    }
-
-    // T069 [US4]: Check event names exist in IDL (errors for unknown names)
-    if let Some(ref events) = idl.events {
-        let event_names: Vec<&str> = events.iter().map(|e| e.name.as_str()).collect();
-
-        for event_name in override_file.events.keys() {
-            if !event_names.contains(&event_name.as_str()) {
-                return Err(ValidationError::UnknownEntity {
-                    entity_type: "event".to_string(),
-                    entity_name: event_name.clone(),
-                    available: if event_names.is_empty() {
-                        "(none)".to_string()
-                    } else {
-                        event_names.join(", ")
-                    },
-                });
-            }
-        }
-    } else if !override_file.events.is_empty() {
-        // IDL has no events but override file has event overrides
-        // Return error for the first event name
-        let first_event = override_file.events.keys().next().unwrap();
-        return Err(ValidationError::UnknownEntity {
-            entity_type: "event".to_string(),
-            entity_name: first_event.clone(),
-            available: "(none - IDL has no events defined)".to_string(),
-        });
-    }
-
-    // T081 [US5]: Check instruction names exist in IDL (errors for unknown names)
-    if !idl.instructions.is_empty() {
-        let instruction_names: Vec<&str> =
-            idl.instructions.iter().map(|i| i.name.as_str()).collect();
-
-        for instruction_name in override_file.instructions.keys() {
-            if !instruction_names.contains(&instruction_name.as_str()) {
-                return Err(ValidationError::UnknownEntity {
-                    entity_type: "instruction".to_string(),
-                    entity_name: instruction_name.clone(),
-                    available: if instruction_names.is_empty() {
-                        "(none)".to_string()
-                    } else {
-                        instruction_names.join(", ")
-                    },
-                });
-            }
-        }
-    } else if !override_file.instructions.is_empty() {
-        // IDL has no instructions but override file has instruction overrides
-        // Return error for the first instruction name
-        let first_instruction = override_file.instructions.keys().next().unwrap();
-        return Err(ValidationError::UnknownEntity {
-            entity_type: "instruction".to_string(),
-            entity_name: first_instruction.clone(),
-            available: "(none - IDL has no instructions defined)".to_string(),
-        });
-    }
+    // T081 [US5]: Validate instruction names exist in IDL
+    let instruction_names: Option<Vec<&str>> = if !idl.instructions.is_empty() {
+        Some(idl.instructions.iter().map(|i| i.name.as_str()).collect())
+    } else {
+        None
+    };
+    let override_instruction_names: Vec<String> =
+        override_file.instructions.keys().cloned().collect();
+    validate_entity_names(
+        "instruction",
+        &override_instruction_names,
+        instruction_names.as_deref(),
+    )?;
 
     Ok(())
 }
@@ -540,7 +536,10 @@ mod tests {
         assert!(matches!(result, OverrideDiscovery::Found(_)));
         match result {
             OverrideDiscovery::Found(path) => {
-                assert_eq!(path, override_file, "Should return the explicit override path");
+                assert_eq!(
+                    path, override_file,
+                    "Should return the explicit override path"
+                );
             }
             _ => panic!("Expected Found, got {:?}", result),
         }
