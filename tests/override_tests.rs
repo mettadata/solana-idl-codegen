@@ -753,6 +753,30 @@ fn test_multiple_override_files_error() {
         stderr
     );
 
+    // Verify enhanced error message includes priority order
+    assert!(
+        stderr.contains("Override file priority order"),
+        "Error should include priority order explanation. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("Explicit --override-file flag"),
+        "Error should mention explicit override flag. stderr: {}",
+        stderr
+    );
+
+    // Verify resolution steps are provided
+    assert!(
+        stderr.contains("To resolve this conflict"),
+        "Error should include resolution steps. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("Remove one of the conflicting files"),
+        "Error should suggest removing conflicting files. stderr: {}",
+        stderr
+    );
+
     // Cleanup happens automatically when temp_dir drops
 }
 

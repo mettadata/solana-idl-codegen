@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-The IDL Override System implementation is **well-structured and functionally complete**. The code demonstrates strong adherence to Rust idioms, comprehensive testing (158 tests total), and clear separation of concerns. **Six high-priority improvements have been completed** (2025-12-28), significantly enhancing code maintainability, user experience, code elegance, performance, test reliability, and code clarity.
+The IDL Override System implementation is **well-structured and functionally complete**. The code demonstrates strong adherence to Rust idioms, comprehensive testing (158 tests total), and clear separation of concerns. **Seven high-priority improvements have been completed** (2025-12-28), significantly enhancing code maintainability, user experience, code elegance, performance, test reliability, code clarity, and error messaging.
 
 **Key Strengths**:
 - Comprehensive test coverage (158 tests: 116 unit + 13 override integration + 16 integration + 5 performance + 7 serialization + 1 generated code)
@@ -20,6 +20,7 @@ The IDL Override System implementation is **well-structured and functionally com
 - **NEW**: Pre-allocated vectors eliminate reallocations during override application
 - **NEW**: TempDir RAII pattern eliminates test directory race conditions and cleanup failures
 - **NEW**: ZERO_DISCRIMINATOR constant eliminates magic numbers for better code clarity
+- **NEW**: Enhanced conflict error messages with priority order and resolution steps
 
 **Completed Improvements (2025-12-28)**:
 1. ✅ Extracted validation logic (S-001): 44% reduction in validate_override_file() function
@@ -28,9 +29,10 @@ The IDL Override System implementation is **well-structured and functionally com
 4. ✅ Pre-allocate applied overrides (P-003): Vec::with_capacity() eliminates 2-4 reallocations
 5. ✅ Test directory management (S-005): TempDir RAII pattern for all 14 tests with automatic cleanup
 6. ✅ Zero discriminator constant (C-006): ZERO_DISCRIMINATOR constant for improved code clarity
+7. ✅ Enhanced conflict errors (C-008): Priority order and resolution steps in conflict error messages
 
 **Remaining Improvement Opportunities**:
-- Additional performance optimizations (2 suggestions remaining)
+- Additional performance optimizations (1 suggestion remaining - low impact for typical use cases)
 
 ---
 
@@ -523,9 +525,19 @@ if override_file.accounts.len() > 10 {
 
 ### 8. Document Override Discovery Priority in Error Messages
 
+**Status**: ✅ **COMPLETED** (2025-12-28)
+
 **Impact**: Low | **Effort**: Low | **Category**: Clarity
 
 **Problem**: When multiple override files conflict, error message doesn't explain priority order.
+
+**Implementation Summary**:
+- Enhanced error message in src/main.rs (lines 111-117) with priority order and resolution steps
+- Added detailed priority order explanation (3 levels: explicit flag → convention-based → global fallback)
+- Added clear resolution steps (remove conflict or use --override-file)
+- Updated integration test (test_multiple_override_files_error) with 4 additional assertions
+- All 158 tests pass with zero warnings
+- Significantly improves user experience when encountering conflicts
 
 **Current Error** (integration test line 741-756):
 ```

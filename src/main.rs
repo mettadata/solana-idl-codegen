@@ -108,9 +108,13 @@ fn main() -> Result<()> {
             for (file, source) in files.iter().zip(sources.iter()) {
                 eprintln!("  - {} ({})", file.display(), source);
             }
-            eprintln!(
-                "\nPlease remove conflicting override files or use --override-file to specify which one to use."
-            );
+            eprintln!("\nOverride file priority order:");
+            eprintln!("  1. Explicit --override-file flag (highest priority)");
+            eprintln!("  2. Convention-based: ./overrides/{{idl_name}}.json");
+            eprintln!("  3. Global fallback: ./idl-overrides.json (lowest priority)");
+            eprintln!("\nTo resolve this conflict:");
+            eprintln!("  - Remove one of the conflicting files, OR");
+            eprintln!("  - Use --override-file <path> to explicitly choose which to apply");
             anyhow::bail!("Multiple override files detected");
         }
     }
