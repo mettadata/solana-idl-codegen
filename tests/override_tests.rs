@@ -276,3 +276,135 @@ fn test_warning_shows_original_and_override_address() {
     // Clean up
     let _ = fs::remove_dir_all(&test_dir);
 }
+
+// ====================
+// User Story 3: Override Incorrect Account Discriminators
+// ====================
+
+/// T049 [P] [US3] Integration test: IDL with incorrect account discriminators + override → generated code compiles
+#[test]
+fn test_account_discriminators_with_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us3");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_account_disc.json");
+    let override_path = test_dir.join("test_account_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_account_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_account_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Verify generated code exists
+    let accounts_rs = output_dir
+        .join("test_program")
+        .join("src")
+        .join("accounts.rs");
+    assert!(accounts_rs.exists(), "Generated accounts.rs not found");
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T050 [P] [US3] Integration test: verify account struct DISCRIMINATOR constant matches override
+#[test]
+fn test_account_discriminator_constant_matches_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us3_verify");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_account_disc.json");
+    let override_path = test_dir.join("test_account_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_account_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_account_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Read generated accounts.rs
+    let accounts_rs_path = output_dir
+        .join("test_program")
+        .join("src")
+        .join("accounts.rs");
+    let accounts_rs_content =
+        fs::read_to_string(&accounts_rs_path).expect("Failed to read generated accounts.rs");
+
+    // Verify PoolState discriminator matches override [1, 2, 3, 4, 5, 6, 7, 8]
+    assert!(
+        accounts_rs_content.contains("pub struct PoolState"),
+        "Generated accounts.rs does not contain PoolState struct"
+    );
+    assert!(
+        accounts_rs_content.contains("const DISCRIMINATOR: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8]")
+            || accounts_rs_content
+                .contains("DISCRIMINATOR: [u8; 8] = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]"),
+        "PoolState DISCRIMINATOR constant does not match override value [1, 2, 3, 4, 5, 6, 7, 8]"
+    );
+
+    // Verify UserAccount discriminator matches override [11, 12, 13, 14, 15, 16, 17, 18]
+    assert!(
+        accounts_rs_content.contains("pub struct UserAccount"),
+        "Generated accounts.rs does not contain UserAccount struct"
+    );
+    assert!(
+        accounts_rs_content.contains("const DISCRIMINATOR: [u8; 8] = [11, 12, 13, 14, 15, 16, 17, 18]")
+            || accounts_rs_content.contains("DISCRIMINATOR: [u8; 8] = [11u8, 12u8, 13u8, 14u8, 15u8, 16u8, 17u8, 18u8]"),
+        "UserAccount DISCRIMINATOR constant does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}

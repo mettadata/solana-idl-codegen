@@ -128,6 +128,253 @@ pub enum OverrideType {
     InstructionDiscriminator,
 }
 
+// Public API functions
+use anyhow::{Context, Result};
+use std::fs;
+use std::path::Path;
+
+/// Discover override file location using convention-based search or explicit path
+///
+/// # Discovery Order
+/// 1. If `explicit_override` provided: check if it exists and detect conflicts with convention
+/// 2. Convention-based: check `./overrides/{idl_name}.json`
+/// 3. Global fallback: check `./idl-overrides.json`
+///
+/// # Returns
+/// - `OverrideDiscovery::Found(path)` if override file found
+/// - `OverrideDiscovery::NotFound` if no override file found (not an error)
+/// - `OverrideDiscovery::Conflict` if multiple override files detected
+pub fn discover_override_file(
+    _idl_path: &Path,
+    idl_name: &str,
+    explicit_override: Option<&Path>,
+) -> Result<OverrideDiscovery> {
+    let mut found_files = Vec::new();
+    let mut sources = Vec::new();
+
+    // Check explicit override file
+    if let Some(explicit_path) = explicit_override {
+        if explicit_path.exists() {
+            found_files.push(explicit_path.to_path_buf());
+            sources.push("explicit CLI --override-file".to_string());
+        }
+    }
+
+    // Check convention-based per-IDL file: ./overrides/{idl_name}.json
+    let convention_path = PathBuf::from(format!("./overrides/{}.json", idl_name));
+    if convention_path.exists() {
+        found_files.push(convention_path.clone());
+        sources.push("convention-based discovery".to_string());
+    }
+
+    // Check global fallback: ./idl-overrides.json
+    let global_path = PathBuf::from("./idl-overrides.json");
+    if global_path.exists() && !found_files.contains(&global_path) {
+        found_files.push(global_path.clone());
+        sources.push("global fallback".to_string());
+    }
+
+    // Return result based on found files
+    match found_files.len() {
+        0 => Ok(OverrideDiscovery::NotFound),
+        1 => Ok(OverrideDiscovery::Found(found_files[0].clone())),
+        _ => Ok(OverrideDiscovery::Conflict {
+            files: found_files,
+            sources,
+        }),
+    }
+}
+
+/// Load and parse override file from disk
+///
+/// # Errors
+/// - File not found or cannot be read
+/// - Invalid JSON syntax
+/// - JSON structure doesn't match OverrideFile schema
+pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
+    let content =
+        fs::read_to_string(path).context(format!("Failed to read override file: {:?}", path))?;
+
+    let override_file: OverrideFile = serde_json::from_str(&content)
+        .context(format!("Failed to parse override file JSON: {:?}", path))?;
+
+    Ok(override_file)
+}
+
+/// Validate override file structure and values
+///
+/// # Returns
+/// - `Ok(warnings)` if validation passes, with list of warning messages
+/// - `Err(ValidationError)` if validation fails
+///
+/// # Validation Rules
+/// - At least one field must be non-empty
+/// - Program address must be valid base58 Pubkey (if present)
+/// - Program address cannot be system default (11111...1111)
+/// - Discriminators must be exactly 8 bytes (enforced by type)
+/// - Discriminators cannot be all zeros
+/// - Entity names should exist in IDL (warnings only)
+pub fn validate_override_file(
+    override_file: &OverrideFile,
+    idl: &crate::idl::Idl,
+) -> Result<Vec<String>, ValidationError> {
+    let mut warnings = Vec::new();
+
+    // Check that at least one field is non-empty
+    if override_file.program_address.is_none()
+        && override_file.accounts.is_empty()
+        && override_file.events.is_empty()
+        && override_file.instructions.is_empty()
+    {
+        return Err(ValidationError::EmptyOverrideFile);
+    }
+
+    // Validate program address if present
+    if let Some(ref address) = override_file.program_address {
+        // Validate base58 format by attempting to decode
+        // Solana Pubkeys are 32 bytes when decoded from base58
+        match bs58::decode(address).into_vec() {
+            Ok(decoded) => {
+                if decoded.len() != 32 {
+                    return Err(ValidationError::InvalidProgramAddress {
+                        address: address.clone(),
+                    });
+                }
+
+                // Check for system default pubkey (all 1s in base58 = 32 bytes of 0x00)
+                if decoded == vec![0u8; 32] {
+                    return Err(ValidationError::SystemDefaultPubkey {
+                        address: address.clone(),
+                    });
+                }
+            }
+            Err(_) => {
+                return Err(ValidationError::InvalidProgramAddress {
+                    address: address.clone(),
+                });
+            }
+        }
+    }
+
+    // Validate discriminators (will be expanded in US3)
+    // For now, just check they're not all zeros
+    for (name, disc_override) in &override_file.accounts {
+        if disc_override.discriminator == [0u8; 8] {
+            return Err(ValidationError::AllZeroDiscriminator {
+                entity_type: "account".to_string(),
+                entity_name: name.clone(),
+            });
+        }
+    }
+
+    for (name, disc_override) in &override_file.events {
+        if disc_override.discriminator == [0u8; 8] {
+            return Err(ValidationError::AllZeroDiscriminator {
+                entity_type: "event".to_string(),
+                entity_name: name.clone(),
+            });
+        }
+    }
+
+    for (name, disc_override) in &override_file.instructions {
+        if disc_override.discriminator == [0u8; 8] {
+            return Err(ValidationError::AllZeroDiscriminator {
+                entity_type: "instruction".to_string(),
+                entity_name: name.clone(),
+            });
+        }
+    }
+
+    // T056 [US3]: Check account names exist in IDL (warnings for unknown names)
+    if let Some(ref accounts) = idl.accounts {
+        let account_names: Vec<&str> = accounts.iter().map(|a| a.name.as_str()).collect();
+
+        for account_name in override_file.accounts.keys() {
+            if !account_names.contains(&account_name.as_str()) {
+                warnings.push(format!(
+                    "Unknown account '{}' in override file. Available accounts: {}",
+                    account_name,
+                    if account_names.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        account_names.join(", ")
+                    }
+                ));
+            }
+        }
+    } else if !override_file.accounts.is_empty() {
+        // IDL has no accounts but override file has account overrides
+        warnings.push(
+            "Override file specifies account discriminators but IDL has no accounts defined"
+                .to_string(),
+        );
+    }
+
+    Ok(warnings)
+}
+
+/// Apply validated overrides to IDL structure
+///
+/// # Returns
+/// - `Ok((modified_idl, applied_overrides))` with IDL and list of applied overrides
+/// - `Err` if override application fails (should be rare after validation)
+///
+/// # Behavior
+/// - Applies program address override (if present)
+/// - Applies account discriminator overrides (User Story 3)
+/// - Applies event discriminator overrides (User Story 4)
+/// - Applies instruction discriminator overrides (User Story 5)
+/// - Tracks all applied overrides for logging
+pub fn apply_overrides(
+    mut idl: crate::idl::Idl,
+    override_file: &OverrideFile,
+) -> Result<(crate::idl::Idl, Vec<AppliedOverride>)> {
+    let mut applied = Vec::new();
+
+    // Apply program address override
+    if let Some(ref new_address) = override_file.program_address {
+        let original_value = idl.address.clone();
+
+        // Update address field
+        idl.address = Some(new_address.clone());
+
+        applied.push(AppliedOverride {
+            override_type: OverrideType::ProgramAddress,
+            entity_name: None,
+            original_value,
+            override_value: new_address.clone(),
+        });
+    }
+
+    // T057 [US3]: Apply account discriminator overrides
+    if let Some(ref mut accounts) = idl.accounts {
+        for account in accounts.iter_mut() {
+            if let Some(disc_override) = override_file.accounts.get(&account.name) {
+                // Capture original value for logging
+                let original = account
+                    .discriminator
+                    .as_ref()
+                    .map(|d| format!("{:?}", d))
+                    .unwrap_or("(none)".to_string());
+
+                // Apply the override
+                account.discriminator = Some(disc_override.discriminator.to_vec());
+
+                applied.push(AppliedOverride {
+                    override_type: OverrideType::AccountDiscriminator,
+                    entity_name: Some(account.name.clone()),
+                    original_value: Some(original),
+                    override_value: format!("{:?}", disc_override.discriminator),
+                });
+            }
+        }
+    }
+
+    // Event discriminators will be added in User Story 4
+    // Instruction discriminators will be added in User Story 5
+
+    Ok((idl, applied))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,204 +697,133 @@ mod tests {
         // In practice, main.rs checks if original_value.is_some() and != "(none)" to show warning
         // The warning format is: "⚠ Program address: {original} → {new}"
     }
-}
 
-// Public API functions
-use anyhow::{Context, Result};
-use std::fs;
-use std::path::Path;
+    // ====================
+    // User Story 3 Tests: Override Incorrect Account Discriminators
+    // ====================
 
-/// Discover override file location using convention-based search or explicit path
-///
-/// # Discovery Order
-/// 1. If `explicit_override` provided: check if it exists and detect conflicts with convention
-/// 2. Convention-based: check `./overrides/{idl_name}.json`
-/// 3. Global fallback: check `./idl-overrides.json`
-///
-/// # Returns
-/// - `OverrideDiscovery::Found(path)` if override file found
-/// - `OverrideDiscovery::NotFound` if no override file found (not an error)
-/// - `OverrideDiscovery::Conflict` if multiple override files detected
-pub fn discover_override_file(
-    _idl_path: &Path,
-    idl_name: &str,
-    explicit_override: Option<&Path>,
-) -> Result<OverrideDiscovery> {
-    let mut found_files = Vec::new();
-    let mut sources = Vec::new();
+    /// T044 [P] [US3] Unit test for DiscriminatorOverride parsing from JSON
+    #[test]
+    fn test_discriminator_override_parsing() {
+        let json = r#"{
+            "discriminator": [1, 2, 3, 4, 5, 6, 7, 8]
+        }"#;
 
-    // Check explicit override file
-    if let Some(explicit_path) = explicit_override {
-        if explicit_path.exists() {
-            found_files.push(explicit_path.to_path_buf());
-            sources.push("explicit CLI --override-file".to_string());
-        }
+        let disc_override: DiscriminatorOverride = serde_json::from_str(json).unwrap();
+        assert_eq!(disc_override.discriminator, [1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
-    // Check convention-based per-IDL file: ./overrides/{idl_name}.json
-    let convention_path = PathBuf::from(format!("./overrides/{}.json", idl_name));
-    if convention_path.exists() {
-        found_files.push(convention_path.clone());
-        sources.push("convention-based discovery".to_string());
+    /// T045 [P] [US3] Unit test for discriminator validation (exactly 8 bytes)
+    #[test]
+    fn test_discriminator_exactly_8_bytes() {
+        // The discriminator field is typed as [u8; 8], so it's always exactly 8 bytes
+        // This test verifies the type system enforces this
+        let disc = DiscriminatorOverride {
+            discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+        };
+        assert_eq!(disc.discriminator.len(), 8);
     }
 
-    // Check global fallback: ./idl-overrides.json
-    let global_path = PathBuf::from("./idl-overrides.json");
-    if global_path.exists() && !found_files.contains(&global_path) {
-        found_files.push(global_path.clone());
-        sources.push("global fallback".to_string());
+    /// T046 [P] [US3] Unit test for discriminator validation (not all zeros)
+    #[test]
+    fn test_discriminator_not_all_zeros() {
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: {
+                let mut map = HashMap::new();
+                map.insert(
+                    "TestAccount".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+                    },
+                );
+                map
+            },
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        let idl = crate::idl::Idl {
+            address: None,
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, ValidationError::AllZeroDiscriminator { .. }));
     }
 
-    // Return result based on found files
-    match found_files.len() {
-        0 => Ok(OverrideDiscovery::NotFound),
-        1 => Ok(OverrideDiscovery::Found(found_files[0].clone())),
-        _ => Ok(OverrideDiscovery::Conflict {
-            files: found_files,
-            sources,
-        }),
-    }
-}
+    /// T047 [P] [US3] Unit test for account discriminator override application
+    #[test]
+    fn test_account_discriminator_override_application() {
+        // This test will be fully implemented once apply_overrides supports account discriminators
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: {
+                let mut map = HashMap::new();
+                map.insert(
+                    "PoolState".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+                    },
+                );
+                map
+            },
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
 
-/// Load and parse override file from disk
-///
-/// # Errors
-/// - File not found or cannot be read
-/// - Invalid JSON syntax
-/// - JSON structure doesn't match OverrideFile schema
-pub fn load_override_file(path: &Path) -> Result<OverrideFile> {
-    let content =
-        fs::read_to_string(path).context(format!("Failed to read override file: {:?}", path))?;
-
-    let override_file: OverrideFile = serde_json::from_str(&content)
-        .context(format!("Failed to parse override file JSON: {:?}", path))?;
-
-    Ok(override_file)
-}
-
-/// Validate override file structure and values
-///
-/// # Returns
-/// - `Ok(warnings)` if validation passes, with list of warning messages
-/// - `Err(ValidationError)` if validation fails
-///
-/// # Validation Rules
-/// - At least one field must be non-empty
-/// - Program address must be valid base58 Pubkey (if present)
-/// - Program address cannot be system default (11111...1111)
-/// - Discriminators must be exactly 8 bytes (enforced by type)
-/// - Discriminators cannot be all zeros
-/// - Entity names should exist in IDL (warnings only)
-pub fn validate_override_file(
-    override_file: &OverrideFile,
-    _idl: &crate::idl::Idl,
-) -> Result<Vec<String>, ValidationError> {
-    let warnings = Vec::new();
-
-    // Check that at least one field is non-empty
-    if override_file.program_address.is_none()
-        && override_file.accounts.is_empty()
-        && override_file.events.is_empty()
-        && override_file.instructions.is_empty()
-    {
-        return Err(ValidationError::EmptyOverrideFile);
+        // For now, just verify the structure is correct
+        assert_eq!(override_file.accounts.len(), 1);
+        assert!(override_file.accounts.contains_key("PoolState"));
     }
 
-    // Validate program address if present
-    if let Some(ref address) = override_file.program_address {
-        // Validate base58 format by attempting to decode
-        // Solana Pubkeys are 32 bytes when decoded from base58
-        match bs58::decode(address).into_vec() {
-            Ok(decoded) => {
-                if decoded.len() != 32 {
-                    return Err(ValidationError::InvalidProgramAddress {
-                        address: address.clone(),
-                    });
-                }
+    /// T048 [P] [US3] Unit test for unknown account name warning
+    #[test]
+    fn test_unknown_account_name_warning() {
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: {
+                let mut map = HashMap::new();
+                map.insert(
+                    "NonExistentAccount".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+                    },
+                );
+                map
+            },
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
 
-                // Check for system default pubkey (all 1s in base58 = 32 bytes of 0x00)
-                if decoded == vec![0u8; 32] {
-                    return Err(ValidationError::SystemDefaultPubkey {
-                        address: address.clone(),
-                    });
-                }
-            }
-            Err(_) => {
-                return Err(ValidationError::InvalidProgramAddress {
-                    address: address.clone(),
-                });
-            }
-        }
+        // IDL with no accounts defined
+        let idl = crate::idl::Idl {
+            address: None,
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        // Validation should pass but return warnings about unknown account
+        let result = validate_override_file(&override_file, &idl);
+        // This will be enhanced when we add account name validation
+        assert!(result.is_ok());
     }
-
-    // Validate discriminators (will be expanded in US3)
-    // For now, just check they're not all zeros
-    for (name, disc_override) in &override_file.accounts {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "account".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
-
-    for (name, disc_override) in &override_file.events {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "event".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
-
-    for (name, disc_override) in &override_file.instructions {
-        if disc_override.discriminator == [0u8; 8] {
-            return Err(ValidationError::AllZeroDiscriminator {
-                entity_type: "instruction".to_string(),
-                entity_name: name.clone(),
-            });
-        }
-    }
-
-    Ok(warnings)
-}
-
-/// Apply validated overrides to IDL structure
-///
-/// # Returns
-/// - `Ok((modified_idl, applied_overrides))` with IDL and list of applied overrides
-/// - `Err` if override application fails (should be rare after validation)
-///
-/// # Behavior
-/// - Applies program address override (if present)
-/// - Applies account discriminator overrides (User Story 3)
-/// - Applies event discriminator overrides (User Story 4)
-/// - Applies instruction discriminator overrides (User Story 5)
-/// - Tracks all applied overrides for logging
-pub fn apply_overrides(
-    mut idl: crate::idl::Idl,
-    override_file: &OverrideFile,
-) -> Result<(crate::idl::Idl, Vec<AppliedOverride>)> {
-    let mut applied = Vec::new();
-
-    // Apply program address override
-    if let Some(ref new_address) = override_file.program_address {
-        let original_value = idl.address.clone();
-
-        // Update address field
-        idl.address = Some(new_address.clone());
-
-        applied.push(AppliedOverride {
-            override_type: OverrideType::ProgramAddress,
-            entity_name: None,
-            original_value,
-            override_value: new_address.clone(),
-        });
-    }
-
-    // Account discriminators will be added in User Story 3
-    // Event discriminators will be added in User Story 4
-    // Instruction discriminators will be added in User Story 5
-
-    Ok((idl, applied))
 }

@@ -1,0 +1,41 @@
+{
+  "version": "0.1.0",
+  "name": "test_program",
+  "address": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+      "accounts": [],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PoolState",
+      "discriminator": [255, 255, 255, 255, 255, 255, 255, 255],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserAccount",
+      "discriminator": [254, 254, 254, 254, 254, 254, 254, 254],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "balance",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

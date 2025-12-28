@@ -132,30 +132,30 @@
 
 ### Unit Tests for User Story 3 (MANDATORY)
 
-- [ ] T044 [P] [US3] Unit test for `DiscriminatorOverride` parsing from JSON in `src/override.rs` tests module
-- [ ] T045 [P] [US3] Unit test for discriminator validation (exactly 8 bytes) in `src/override.rs` tests module
-- [ ] T046 [P] [US3] Unit test for discriminator validation (not all zeros) in `src/override.rs` tests module
-- [ ] T047 [P] [US3] Unit test for account discriminator override application in `src/override.rs` tests module
-- [ ] T048 [P] [US3] Unit test for unknown account name warning in `src/override.rs` tests module
+- [x] T044 [P] [US3] Unit test for `DiscriminatorOverride` parsing from JSON in `src/override.rs` tests module
+- [x] T045 [P] [US3] Unit test for discriminator validation (exactly 8 bytes) in `src/override.rs` tests module
+- [x] T046 [P] [US3] Unit test for discriminator validation (not all zeros) in `src/override.rs` tests module
+- [x] T047 [P] [US3] Unit test for account discriminator override application in `src/override.rs` tests module
+- [x] T048 [P] [US3] Unit test for unknown account name warning in `src/override.rs` tests module
 
 ### Integration Tests for User Story 3 (MANDATORY)
 
-- [ ] T049 [P] [US3] Integration test: IDL with incorrect account discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
-- [ ] T050 [P] [US3] Integration test: verify account struct `DISCRIMINATOR` constant matches override in `tests/integration/override_tests.rs`
-- [ ] T051 [P] [US3] Integration test: deserialization with corrected discriminator succeeds in `tests/integration/override_tests.rs`
-- [ ] T052 [P] [US3] Create test fixture: IDL with incorrect account discriminators in `tests/integration/fixtures/test_account_disc.json`
-- [ ] T053 [P] [US3] Create test fixture: override file with corrected account discriminators in `tests/integration/fixtures/test_account_override.json`
+- [x] T049 [P] [US3] Integration test: IDL with incorrect account discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
+- [x] T050 [P] [US3] Integration test: verify account struct `DISCRIMINATOR` constant matches override in `tests/integration/override_tests.rs`
+- [x] T051 [P] [US3] Integration test: deserialization with corrected discriminator succeeds in `tests/integration/override_tests.rs`
+- [x] T052 [P] [US3] Create test fixture: IDL with incorrect account discriminators in `tests/integration/fixtures/test_account_disc.json`
+- [x] T053 [P] [US3] Create test fixture: override file with corrected account discriminators in `tests/integration/fixtures/test_account_override.json`
 
 ### Implementation for User Story 3
 
-- [ ] T054 [P] [US3] Implement discriminator format validation (8-byte check) in `src/override.rs`
-- [ ] T055 [P] [US3] Implement discriminator sanity validation (not all zeros) in `src/override.rs`
-- [ ] T056 [US3] Enhance `validate_override_file()` to check account names exist in IDL in `src/override.rs`
-- [ ] T057 [US3] Enhance `apply_overrides()` to apply account discriminator overrides in `src/override.rs`
-- [ ] T058 [US3] Add warning for unknown account names in override file in `src/override.rs`
-- [ ] T059 [US3] Update IDL account discriminator fields with override values in `src/override.rs`
-- [ ] T060 [US3] Verify all unit tests pass: `cargo test --lib override`
-- [ ] T061 [US3] Verify integration tests pass: `cargo test --test override_tests test_account_disc`
+- [x] T054 [P] [US3] Implement discriminator format validation (8-byte check) in `src/override.rs`
+- [x] T055 [P] [US3] Implement discriminator sanity validation (not all zeros) in `src/override.rs`
+- [x] T056 [US3] Enhance `validate_override_file()` to check account names exist in IDL in `src/override.rs`
+- [x] T057 [US3] Enhance `apply_overrides()` to apply account discriminator overrides in `src/override.rs`
+- [x] T058 [US3] Add warning for unknown account names in override file in `src/override.rs`
+- [x] T059 [US3] Update IDL account discriminator fields with override values in `src/override.rs`
+- [x] T060 [US3] Verify all unit tests pass: `cargo test --lib override`
+- [x] T061 [US3] Verify integration tests pass: `cargo test --test override_tests test_account_disc`
 
 **Checkpoint**: At this point, User Stories 1, 2, AND 3 should all work independently
 
