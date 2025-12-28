@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-The IDL Override System implementation is **well-structured and functionally complete**. The code demonstrates strong adherence to Rust idioms, comprehensive testing (158 tests total), and clear separation of concerns. **Three high-priority improvements have been completed** (2025-12-28), significantly enhancing code maintainability, user experience, and code elegance.
+The IDL Override System implementation is **well-structured and functionally complete**. The code demonstrates strong adherence to Rust idioms, comprehensive testing (158 tests total), and clear separation of concerns. **Four high-priority improvements have been completed** (2025-12-28), significantly enhancing code maintainability, user experience, code elegance, and performance.
 
 **Key Strengths**:
 - Comprehensive test coverage (158 tests: 116 unit + 13 override integration + 16 integration + 5 performance + 7 serialization + 1 generated code)
@@ -17,16 +17,18 @@ The IDL Override System implementation is **well-structured and functionally com
 - **NEW**: Extracted validation helpers for improved maintainability (44% reduction in main function)
 - **NEW**: Typo suggestions using Jaro-Winkler similarity for superior error messages
 - **NEW**: Iterator adapter pattern for discriminator validation (cleaner functional style)
+- **NEW**: Pre-allocated vectors eliminate reallocations during override application
 
 **Completed Improvements (2025-12-28)**:
 1. ✅ Extracted validation logic (S-001): 44% reduction in validate_override_file() function
 2. ✅ Typo suggestions (C-004): "Did you mean 'X'?" suggestions using strsim crate (>0.8 similarity)
 3. ✅ Iterator adapter optimization (P-002): Single-pass discriminator validation with try_for_each
+4. ✅ Pre-allocate applied overrides (P-003): Vec::with_capacity() eliminates 2-4 reallocations
 
 **Remaining Improvement Opportunities**:
-- Pre-allocate applied overrides vector (4 suggestions remaining)
-- Simplify test directory management with tempfile crate
+- Simplify test directory management with tempfile crate (3 suggestions remaining)
 - Additional performance optimizations
+- Code clarity enhancements
 
 ---
 
@@ -248,9 +250,19 @@ fn validate_discriminator(
 
 ### 3. Pre-Allocate Applied Overrides Vector
 
+**Status**: ✅ **COMPLETED** (2025-12-28)
+
 **Impact**: Low-Medium | **Effort**: Low | **Category**: Performance
 
 **Problem**: `Vec<AppliedOverride>` in `apply_overrides()` grows dynamically with multiple reallocations.
+
+**Implementation Summary**:
+- Added capacity calculation based on total number of potential overrides
+- Formula: `program_address.iter().count() + accounts.len() + events.len() + instructions.len()`
+- Replaced `Vec::new()` with `Vec::with_capacity(capacity)` at line 444
+- Single allocation eliminates 2-4 potential reallocations during vector growth
+- All 158 tests pass with zero clippy warnings
+- Pure performance optimization with zero functional changes
 
 **Current Code** (line 392):
 ```rust

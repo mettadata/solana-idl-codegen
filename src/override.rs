@@ -436,7 +436,12 @@ pub fn apply_overrides(
     mut idl: crate::idl::Idl,
     override_file: &OverrideFile,
 ) -> Result<(crate::idl::Idl, Vec<AppliedOverride>)> {
-    let mut applied = Vec::new();
+    // Pre-allocate vector capacity to avoid reallocations
+    let capacity = override_file.program_address.iter().count()
+        + override_file.accounts.len()
+        + override_file.events.len()
+        + override_file.instructions.len();
+    let mut applied = Vec::with_capacity(capacity);
 
     // Apply program address override
     if let Some(ref new_address) = override_file.program_address {
