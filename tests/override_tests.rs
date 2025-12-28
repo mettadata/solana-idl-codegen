@@ -711,11 +711,11 @@ fn test_multiple_override_files_error() {
 
     // Change to test directory
     let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&test_dir).expect("Failed to change to test directory");
+    std::env::set_current_dir(test_dir).expect("Failed to change to test directory");
 
     // Run codegen - should fail with conflict error
     let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
-        .args(&[
+        .args([
             "-i",
             "test_program.json",
             "-o",
@@ -791,7 +791,7 @@ fn test_malformed_override_file_error() {
 
     // Run codegen with explicit override file - should fail with parse error
     let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
-        .args(&[
+        .args([
             "-i",
             idl_path.to_str().unwrap(),
             "-o",
@@ -851,7 +851,7 @@ fn test_empty_override_file_error() {
 
     // Run codegen with explicit override file - should fail with empty file error
     let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
-        .args(&[
+        .args([
             "-i",
             idl_path.to_str().unwrap(),
             "-o",
