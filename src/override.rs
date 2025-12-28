@@ -335,6 +335,31 @@ pub fn validate_override_file(
         );
     }
 
+    // T081 [US5]: Check instruction names exist in IDL (warnings for unknown names)
+    if !idl.instructions.is_empty() {
+        let instruction_names: Vec<&str> = idl.instructions.iter().map(|i| i.name.as_str()).collect();
+
+        for instruction_name in override_file.instructions.keys() {
+            if !instruction_names.contains(&instruction_name.as_str()) {
+                warnings.push(format!(
+                    "Unknown instruction '{}' in override file. Available instructions: {}",
+                    instruction_name,
+                    if instruction_names.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        instruction_names.join(", ")
+                    }
+                ));
+            }
+        }
+    } else if !override_file.instructions.is_empty() {
+        // IDL has no instructions but override file has instruction overrides
+        warnings.push(
+            "Override file specifies instruction discriminators but IDL has no instructions defined"
+                .to_string(),
+        );
+    }
+
     Ok(warnings)
 }
 
@@ -419,7 +444,27 @@ pub fn apply_overrides(
         }
     }
 
-    // Instruction discriminators will be added in User Story 5
+    // T082, T084 [US5]: Apply instruction discriminator overrides
+    for instruction in idl.instructions.iter_mut() {
+        if let Some(disc_override) = override_file.instructions.get(&instruction.name) {
+            // Capture original value for logging
+            let original = instruction
+                .discriminator
+                .as_ref()
+                .map(|d| format!("{:?}", d))
+                .unwrap_or("(none)".to_string());
+
+            // Apply the override
+            instruction.discriminator = Some(disc_override.discriminator.to_vec());
+
+            applied.push(AppliedOverride {
+                override_type: OverrideType::InstructionDiscriminator,
+                entity_name: Some(instruction.name.clone()),
+                original_value: Some(original),
+                override_value: format!("{:?}", disc_override.discriminator),
+            });
+        }
+    }
 
     Ok((idl, applied))
 }
@@ -1091,6 +1136,149 @@ mod tests {
         assert_eq!(
             event3.discriminator.as_ref().unwrap(),
             &vec![3, 3, 3, 3, 3, 3, 3, 3]
+        );
+    }
+
+    // ====================
+    // User Story 5 Tests: Override Incorrect Instruction Discriminators
+    // ====================
+
+    /// T075 [P] [US5] Unit test for instruction discriminator override application
+    #[test]
+    fn test_instruction_discriminator_override_application() {
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: vec![
+                (
+                    "Initialize".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+                    },
+                ),
+                (
+                    "Trade".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [11, 12, 13, 14, 15, 16, 17, 18],
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let idl = crate::idl::Idl {
+            version: Some("0.1.0".to_string()),
+            name: Some("test_program".to_string()),
+            address: None,
+            instructions: vec![
+                crate::idl::Instruction {
+                    name: "Initialize".to_string(),
+                    discriminator: Some(vec![255, 255, 255, 255, 255, 255, 255, 255]),
+                    accounts: vec![],
+                    args: vec![],
+                    docs: None,
+                },
+                crate::idl::Instruction {
+                    name: "Trade".to_string(),
+                    discriminator: Some(vec![254, 254, 254, 254, 254, 254, 254, 254]),
+                    accounts: vec![],
+                    args: vec![],
+                    docs: None,
+                },
+            ],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        let (modified_idl, applied) = apply_overrides(idl, &override_file)
+            .expect("Failed to apply instruction discriminator overrides");
+
+        assert_eq!(applied.len(), 2, "Should apply 2 instruction overrides");
+
+        // Verify Initialize instruction discriminator was updated
+        let initialize_ix = modified_idl
+            .instructions
+            .iter()
+            .find(|i| i.name == "Initialize")
+            .unwrap();
+        assert_eq!(
+            initialize_ix.discriminator.as_ref().unwrap(),
+            &vec![1, 2, 3, 4, 5, 6, 7, 8],
+            "Initialize discriminator should be overridden"
+        );
+
+        // Verify Trade instruction discriminator was updated
+        let trade_ix = modified_idl
+            .instructions
+            .iter()
+            .find(|i| i.name == "Trade")
+            .unwrap();
+        assert_eq!(
+            trade_ix.discriminator.as_ref().unwrap(),
+            &vec![11, 12, 13, 14, 15, 16, 17, 18],
+            "Trade discriminator should be overridden"
+        );
+    }
+
+    /// T076 [P] [US5] Unit test for unknown instruction name warning
+    #[test]
+    fn test_unknown_instruction_name_warning() {
+        let override_file = OverrideFile {
+            program_address: None,
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: vec![
+                (
+                    "UnknownInstruction".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+                    },
+                ),
+                (
+                    "Initialize".to_string(),
+                    DiscriminatorOverride {
+                        discriminator: [11, 12, 13, 14, 15, 16, 17, 18],
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let idl = crate::idl::Idl {
+            version: Some("0.1.0".to_string()),
+            name: Some("test_program".to_string()),
+            address: None,
+            instructions: vec![crate::idl::Instruction {
+                name: "Initialize".to_string(),
+                discriminator: Some(vec![255, 255, 255, 255, 255, 255, 255, 255]),
+                accounts: vec![],
+                args: vec![],
+                docs: None,
+            }],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        let warnings = validate_override_file(&override_file, &idl)
+            .expect("Validation should succeed with warnings");
+
+        assert!(!warnings.is_empty(), "Should have warnings");
+        assert!(
+            warnings.iter().any(|w| w.contains("Unknown instruction")
+                && w.contains("UnknownInstruction")),
+            "Should warn about unknown instruction name. Got: {:?}",
+            warnings
         );
     }
 }

@@ -537,3 +537,127 @@ fn test_event_discriminator_constant_matches_override() {
     // Clean up
     let _ = fs::remove_dir_all(&test_dir);
 }
+
+// ====================
+// User Story 5: Override Incorrect Instruction Discriminators
+// ====================
+
+/// T077 [P] [US5] Integration test: IDL with incorrect instruction discriminators + override → generated code compiles
+#[test]
+fn test_instruction_discriminators_with_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us5");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_instruction_disc.json");
+    let override_path = test_dir.join("test_instruction_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_instruction_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_instruction_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Verify generated code exists
+    let instructions_rs = output_dir
+        .join("test_program")
+        .join("src")
+        .join("instructions.rs");
+    assert!(instructions_rs.exists(), "Generated instructions.rs not found");
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T078 [P] [US5] Integration test: verify instruction enum discriminator matches override
+#[test]
+fn test_instruction_discriminator_constant_matches_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us5_verify");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_instruction_disc.json");
+    let override_path = test_dir.join("test_instruction_override.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_instruction_disc.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_instruction_override.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Read generated instructions.rs
+    let instructions_rs_path = output_dir
+        .join("test_program")
+        .join("src")
+        .join("instructions.rs");
+    let instructions_rs_content =
+        fs::read_to_string(&instructions_rs_path).expect("Failed to read generated instructions.rs");
+
+    // Verify Initialize instruction discriminator matches override [1, 2, 3, 4, 5, 6, 7, 8]
+    // Instructions use discriminator bytes directly in match statements
+    assert!(
+        instructions_rs_content.contains("[1, 2, 3, 4, 5, 6, 7, 8]")
+            || instructions_rs_content.contains("[1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]"),
+        "Initialize instruction discriminator does not match override value [1, 2, 3, 4, 5, 6, 7, 8]"
+    );
+
+    // Verify Trade instruction discriminator matches override [11, 12, 13, 14, 15, 16, 17, 18]
+    assert!(
+        instructions_rs_content.contains("[11, 12, 13, 14, 15, 16, 17, 18]")
+            || instructions_rs_content.contains("[11u8, 12u8, 13u8, 14u8, 15u8, 16u8, 17u8, 18u8]"),
+        "Trade instruction discriminator does not match override value [11, 12, 13, 14, 15, 16, 17, 18]"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}

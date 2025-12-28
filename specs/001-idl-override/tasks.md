@@ -201,24 +201,24 @@
 
 ### Unit Tests for User Story 5 (MANDATORY)
 
-- [ ] T075 [P] [US5] Unit test for instruction discriminator override application in `src/override.rs` tests module
-- [ ] T076 [P] [US5] Unit test for unknown instruction name warning in `src/override.rs` tests module
+- [x] T075 [P] [US5] Unit test for instruction discriminator override application in `src/override.rs` tests module
+- [x] T076 [P] [US5] Unit test for unknown instruction name warning in `src/override.rs` tests module
 
 ### Integration Tests for User Story 5 (MANDATORY)
 
-- [ ] T077 [P] [US5] Integration test: IDL with incorrect instruction discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
-- [ ] T078 [P] [US5] Integration test: verify instruction enum discriminator matches override in `tests/integration/override_tests.rs`
-- [ ] T079 [P] [US5] Create test fixture: IDL with incorrect instruction discriminators in `tests/integration/fixtures/test_instruction_disc.json`
-- [ ] T080 [P] [US5] Create test fixture: override file with corrected instruction discriminators in `tests/integration/fixtures/test_instruction_override.json`
+- [x] T077 [P] [US5] Integration test: IDL with incorrect instruction discriminators + override → generated code compiles in `tests/integration/override_tests.rs`
+- [x] T078 [P] [US5] Integration test: verify instruction enum discriminator matches override in `tests/integration/override_tests.rs`
+- [x] T079 [P] [US5] Create test fixture: IDL with incorrect instruction discriminators in `tests/integration/fixtures/test_instruction_disc.json`
+- [x] T080 [P] [US5] Create test fixture: override file with corrected instruction discriminators in `tests/integration/fixtures/test_instruction_override.json`
 
 ### Implementation for User Story 5
 
-- [ ] T081 [US5] Enhance `validate_override_file()` to check instruction names exist in IDL in `src/override.rs`
-- [ ] T082 [US5] Enhance `apply_overrides()` to apply instruction discriminator overrides in `src/override.rs`
-- [ ] T083 [US5] Add warning for unknown instruction names in override file in `src/override.rs`
-- [ ] T084 [US5] Update IDL instruction discriminator fields with override values in `src/override.rs`
-- [ ] T085 [US5] Verify all unit tests pass: `cargo test --lib override`
-- [ ] T086 [US5] Verify integration tests pass: `cargo test --test override_tests test_instruction_disc`
+- [x] T081 [US5] Enhance `validate_override_file()` to check instruction names exist in IDL in `src/override.rs`
+- [x] T082 [US5] Enhance `apply_overrides()` to apply instruction discriminator overrides in `src/override.rs`
+- [x] T083 [US5] Add warning for unknown instruction names in override file in `src/override.rs`
+- [x] T084 [US5] Update IDL instruction discriminator fields with override values in `src/override.rs`
+- [x] T085 [US5] Verify all unit tests pass: `cargo test --lib override`
+- [x] T086 [US5] Verify integration tests pass: `cargo test --test override_tests test_instruction_disc`
 
 **Checkpoint**: All 5 user stories should now be independently functional
 
