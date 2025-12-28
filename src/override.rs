@@ -326,6 +326,130 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, ValidationError::SystemDefaultPubkey { .. }));
     }
+
+    // ====================
+    // User Story 2 Tests: Override Incorrect Program Addresses
+    // ====================
+
+    /// T031 [P] [US2] Unit test for override with conflicting address
+    #[test]
+    fn test_override_conflicting_address() {
+        let override_file = OverrideFile {
+            program_address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        // IDL with different program address
+        let idl = crate::idl::Idl {
+            address: Some("11111111111111111111111111111112".to_string()),
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        // Validation should pass (we allow overriding existing addresses)
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_ok());
+
+        // Apply overrides and verify original value is captured
+        let (modified_idl, applied) = apply_overrides(idl, &override_file).unwrap();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(
+            applied[0].original_value,
+            Some("11111111111111111111111111111112".to_string())
+        );
+        assert_eq!(
+            applied[0].override_value,
+            "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+        );
+        assert_eq!(
+            modified_idl.address,
+            Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string())
+        );
+    }
+
+    /// T032 [P] [US2] Unit test for override with same address (no-op case)
+    #[test]
+    fn test_override_same_address() {
+        let same_address = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string();
+
+        let override_file = OverrideFile {
+            program_address: Some(same_address.clone()),
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        // IDL with same program address
+        let idl = crate::idl::Idl {
+            address: Some(same_address.clone()),
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        // Validation should pass
+        let result = validate_override_file(&override_file, &idl);
+        assert!(result.is_ok());
+
+        // Apply overrides - should still apply even if same
+        let (modified_idl, applied) = apply_overrides(idl, &override_file).unwrap();
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].original_value, Some(same_address.clone()));
+        assert_eq!(applied[0].override_value, same_address);
+        assert_eq!(modified_idl.address, Some(same_address));
+    }
+
+    /// T033 [P] [US2] Unit test for warning message generation when overriding existing address
+    #[test]
+    fn test_warning_for_existing_address_override() {
+        let override_file = OverrideFile {
+            program_address: Some("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8".to_string()),
+            accounts: HashMap::new(),
+            events: HashMap::new(),
+            instructions: HashMap::new(),
+        };
+
+        let original_address = "11111111111111111111111111111112".to_string();
+        let idl = crate::idl::Idl {
+            address: Some(original_address.clone()),
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            instructions: vec![],
+            accounts: None,
+            types: None,
+            events: None,
+            errors: None,
+            constants: None,
+            metadata: None,
+        };
+
+        let (_modified_idl, applied) = apply_overrides(idl, &override_file).unwrap();
+
+        // Verify that original_value contains the old address (this is what triggers the warning)
+        assert!(applied[0].original_value.is_some());
+        assert_eq!(
+            applied[0].original_value.as_deref().unwrap(),
+            original_address.as_str()
+        );
+
+        // In practice, main.rs checks if original_value.is_some() and != "(none)" to show warning
+        // The warning format is: "⚠ Program address: {original} → {new}"
+    }
 }
 
 // Public API functions

@@ -7,7 +7,6 @@
 //! - Verification that generated code compiles and uses override values
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 /// T019 [P] [US1] Integration test: IDL with missing address + override → generated code compiles
@@ -140,6 +139,138 @@ fn test_program_id_matches_override_value() {
     assert!(
         lib_rs_content.contains("declare_id!"),
         "Generated lib.rs does not contain declare_id! macro"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+// ====================
+// User Story 2: Override Incorrect Program Addresses
+// ====================
+
+/// T034 [P] [US2] Integration test: IDL with incorrect address + override → generated code uses override value
+#[test]
+fn test_incorrect_address_with_override() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us2");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_incorrect_address.json");
+    let override_path = test_dir.join("test_address_correction.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_incorrect_address.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_address_correction.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Generate code
+    let output_dir = test_dir.join("generated");
+    let status = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute codegen");
+
+    assert!(status.success(), "Code generation failed");
+
+    // Read generated lib.rs
+    let lib_rs_path = output_dir.join("test_program").join("src").join("lib.rs");
+    let lib_rs_content = fs::read_to_string(&lib_rs_path).expect("Failed to read generated lib.rs");
+
+    // Verify the generated code uses the OVERRIDE address (not the incorrect one from IDL)
+    let override_address = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
+    let incorrect_address = "11111111111111111111111111111112";
+
+    assert!(
+        lib_rs_content.contains(override_address),
+        "Generated code should contain override address"
+    );
+
+    assert!(
+        !lib_rs_content.contains(incorrect_address),
+        "Generated code should NOT contain the incorrect original address"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&test_dir);
+}
+
+/// T035 [P] [US2] Integration test: verify warning logged showing original vs override address
+#[test]
+fn test_warning_shows_original_and_override_address() {
+    let test_dir = std::env::temp_dir().join("idl_override_test_us2_warning");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+
+    // Copy test files
+    let idl_path = test_dir.join("test_incorrect_address.json");
+    let override_path = test_dir.join("test_address_correction.json");
+
+    fs::copy(
+        "tests/integration/fixtures/test_incorrect_address.json",
+        &idl_path,
+    )
+    .expect("Failed to copy test IDL");
+
+    fs::copy(
+        "tests/integration/fixtures/test_address_correction.json",
+        &override_path,
+    )
+    .expect("Failed to copy override file");
+
+    // Run codegen and capture output
+    let output_dir = test_dir.join("generated");
+    let output = Command::new(env!("CARGO_BIN_EXE_solana-idl-codegen"))
+        .args([
+            "--input",
+            idl_path.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--module",
+            "test_program",
+            "--override-file",
+            override_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute codegen");
+
+    assert!(output.status.success(), "Code generation failed");
+
+    // Convert output to string
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Verify warning message contains both addresses
+    let original_address = "11111111111111111111111111111112";
+    let override_address = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
+
+    assert!(
+        stdout.contains(original_address),
+        "Warning should show original address"
+    );
+    assert!(
+        stdout.contains(override_address),
+        "Warning should show override address"
+    );
+    assert!(
+        stdout.contains("⚠") || stdout.contains("Program address"),
+        "Warning should be clearly marked"
     );
 
     // Clean up

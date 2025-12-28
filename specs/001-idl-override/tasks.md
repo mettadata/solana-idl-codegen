@@ -100,25 +100,25 @@
 
 ### Unit Tests for User Story 2 (MANDATORY)
 
-- [ ] T031 [P] [US2] Unit test for override with conflicting address (IDL has address, override provides different one) in `src/override.rs` tests module
-- [ ] T032 [P] [US2] Unit test for override with same address (no-op case) in `src/override.rs` tests module
-- [ ] T033 [P] [US2] Unit test for warning message generation when overriding existing address in `src/override.rs` tests module
+- [X] T031 [P] [US2] Unit test for override with conflicting address (IDL has address, override provides different one) in `src/override.rs` tests module
+- [X] T032 [P] [US2] Unit test for override with same address (no-op case) in `src/override.rs` tests module
+- [X] T033 [P] [US2] Unit test for warning message generation when overriding existing address in `src/override.rs` tests module
 
 ### Integration Tests for User Story 2 (MANDATORY)
 
-- [ ] T034 [P] [US2] Integration test: IDL with incorrect address + override → generated code uses override value in `tests/integration/override_tests.rs`
-- [ ] T035 [P] [US2] Integration test: verify warning logged showing original vs override address in `tests/integration/override_tests.rs`
-- [ ] T036 [P] [US2] Create test fixture: IDL with incorrect program address in `tests/integration/fixtures/test_incorrect_address.json`
-- [ ] T037 [P] [US2] Create test fixture: override file correcting address in `tests/integration/fixtures/test_address_correction.json`
+- [X] T034 [P] [US2] Integration test: IDL with incorrect address + override → generated code uses override value in `tests/override_tests.rs`
+- [X] T035 [P] [US2] Integration test: verify warning logged showing original vs override address in `tests/override_tests.rs`
+- [X] T036 [P] [US2] Create test fixture: IDL with incorrect program address in `tests/integration/fixtures/test_incorrect_address.json`
+- [X] T037 [P] [US2] Create test fixture: override file correcting address in `tests/integration/fixtures/test_address_correction.json`
 
 ### Implementation for User Story 2
 
-- [ ] T038 [US2] Enhance `apply_overrides()` to handle existing program address replacement in `src/override.rs`
-- [ ] T039 [US2] Add warning detection logic (override differs from IDL) in `src/override.rs`
-- [ ] T040 [US2] Implement warning message formatting showing old → new values in `src/override.rs`
-- [ ] T041 [US2] Update `AppliedOverride` tracking to capture original values in `src/override.rs`
-- [ ] T042 [US2] Verify all unit tests pass: `cargo test --lib override`
-- [ ] T043 [US2] Verify integration tests pass: `cargo test --test override_tests test_incorrect_address`
+- [X] T038 [US2] Enhance `apply_overrides()` to handle existing program address replacement in `src/override.rs`
+- [X] T039 [US2] Add warning detection logic (override differs from IDL) in `src/override.rs`
+- [X] T040 [US2] Implement warning message formatting showing old → new values in `src/override.rs`
+- [X] T041 [US2] Update `AppliedOverride` tracking to capture original values in `src/override.rs`
+- [X] T042 [US2] Verify all unit tests pass: `cargo test --lib override`
+- [X] T043 [US2] Verify integration tests pass: `cargo test --test override_tests test_incorrect_address`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently (missing and incorrect addresses)
 
