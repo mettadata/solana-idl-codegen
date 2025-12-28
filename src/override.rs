@@ -36,6 +36,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Invalid discriminator constant - all zeros discriminator is not allowed
+const ZERO_DISCRIMINATOR: [u8; 8] = [0u8; 8];
+
 /// Root structure representing a complete override file for a single IDL
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverrideFile {
@@ -219,7 +222,7 @@ fn validate_discriminator(
     discriminator: &[u8; 8],
     entity_type: &'static str,
 ) -> Result<(), ValidationError> {
-    if discriminator == &[0u8; 8] {
+    if discriminator == &ZERO_DISCRIMINATOR {
         return Err(ValidationError::AllZeroDiscriminator {
             entity_type: entity_type.to_string(),
             entity_name: name.to_string(),
@@ -891,7 +894,7 @@ mod tests {
                 map.insert(
                     "TestAccount".to_string(),
                     DiscriminatorOverride {
-                        discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+                        discriminator: ZERO_DISCRIMINATOR,
                     },
                 );
                 map
