@@ -291,7 +291,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 borsh = {{ version = "^1.5", features = ["derive"] }}
 bytemuck = {{ version = "^1.14", features = ["derive"] }}
-solana-program = "^2.2"
+solana-program = "3.0"
 thiserror = "^2.0"
 num-derive = "^0.4"
 num-traits = "^0.2"
