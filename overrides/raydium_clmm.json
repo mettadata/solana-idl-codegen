@@ -2,9 +2,6 @@
   "instructions": {
     "increase_liquidity_v2": {
       "discriminator": [237, 112, 148, 230, 57, 84, 180, 162]
-    },
-    "open_position_with_token22_nft": {
-      "discriminator": [237, 112, 148, 230, 57, 84, 180, 162]
     }
   }
 }
