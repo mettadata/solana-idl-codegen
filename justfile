@@ -1,7 +1,9 @@
 # List of generated crates
+
 projects := "raydium_amm raydium_clmm raydium_cpmm pumpfun pumpfun_amm"
 
 # IDL configurations: module_name:idl_path
+
 idls := "raydium_amm:idl/raydium-idl/raydium_amm/idl.json raydium_clmm:idl/raydium-idl/raydium_clmm/amm_v3.json raydium_cpmm:idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json pumpfun:idl/pump-public-docs/idl/pump.json pumpfun_amm:idl/pump-public-docs/idl/pump_amm.json"
 
 clean:
@@ -29,7 +31,7 @@ clippy-fix:
 fmt-generated:
     #!/usr/bin/env bash
     set -euo pipefail
-    for project in {{projects}}; do
+    for project in {{ projects }}; do
         if [ -d "generated/$project" ]; then
             echo "Formatting $project..."
             (cd "generated/$project" && cargo fmt --all --check)
@@ -40,7 +42,7 @@ fmt-generated:
 clippy-generated:
     #!/usr/bin/env bash
     set -euo pipefail
-    for project in {{projects}}; do
+    for project in {{ projects }}; do
         if [ -d "generated/$project" ]; then
             echo "Checking $project with clippy..."
             (cd "generated/$project" && cargo clippy --lib --bins --all-features -- --deny warnings)
@@ -53,7 +55,7 @@ lint-generated: generate fmt-generated clippy-generated
 generate: clean
     #!/usr/bin/env bash
     set -euo pipefail
-    for idl in {{idls}}; do
+    for idl in {{ idls }}; do
         module="${idl%%:*}"
         path="${idl#*:}"
         cargo run -- -i "$path" -o generated -m "$module"
@@ -63,7 +65,7 @@ generate: clean
 check-generated: generate
     #!/usr/bin/env bash
     set -euo pipefail
-    for project in {{projects}}; do
+    for project in {{ projects }}; do
         echo "Checking $project..."
         (cd "generated/$project" && cargo check)
     done
@@ -71,12 +73,12 @@ check-generated: generate
 build-generated: clean generate
     #!/usr/bin/env bash
     set -euo pipefail
-    for project in {{projects}}; do
+    for project in {{ projects }}; do
         echo "Building $project..."
         (cd "generated/$project" && cargo build)
     done
 
-test:
+test: generate
     cargo test
 
 # Run integration tests (requires generated code)
