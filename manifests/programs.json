@@ -1,0 +1,32 @@
+{
+  "programs": [
+    {
+      "name": "pumpfun",
+      "idl": "../idl/pump-public-docs/idl/pump.json"
+    },
+    {
+      "name": "pumpfun_amm",
+      "idl": "../idl/pump-public-docs/idl/pump_amm.json"
+    },
+    {
+      "name": "raydium_amm",
+      "idl": "../idl/raydium-idl/raydium_amm/idl.json",
+      "override": "../overrides/raydium_amm.json"
+    },
+    {
+      "name": "raydium_clmm",
+      "idl": "../idl/raydium-idl/raydium_clmm/amm_v3.json"
+    },
+    {
+      "name": "raydium_cpmm",
+      "idl": "../idl/raydium-idl/raydium_cpmm/raydium_cp_swap.json"
+    }
+  ],
+  "output_dir": "../../../interfaces/solana",
+  "registry_crate": "solana_registry",
+  "workspace_cargo_toml": "../../../Cargo.toml",
+  "downstream_cargo_tomls": [
+    "../../../core/Cargo.toml",
+    "../../../chains/solana/Cargo.toml"
+  ]
+}
