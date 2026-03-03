@@ -4,7 +4,7 @@ use heck::{ToPascalCase, ToSnakeCase};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solana_idl_codegen::{codegen, idl, manifest, r#override};
+use solana_idl_codegen::{codegen, idl, manifest, r#override, registry};
 
 #[derive(Parser)]
 #[command(name = "solana-idl-codegen")]
@@ -348,6 +348,9 @@ fn run_manifest_mode(manifest_path: &Path) -> Result<()> {
 
     let output_dir = manifest_dir.join(&mf.output_dir);
 
+    // First pass: generate per-program crates and collect event info for registry
+    let mut program_infos = Vec::new();
+
     for entry in &mf.programs {
         println!("\n--- Generating: {} ---", entry.name);
 
@@ -382,6 +385,10 @@ fn run_manifest_mode(manifest_path: &Path) -> Result<()> {
             idl.instructions.len()
         );
 
+        // Collect event info for registry (before generating)
+        let event_info = registry::collect_program_event_info(entry, &idl);
+        program_infos.push(event_info);
+
         // Generate code
         let generated_code = codegen::generate(&idl, &entry.name)?;
 
@@ -391,8 +398,13 @@ fn run_manifest_mode(manifest_path: &Path) -> Result<()> {
         println!("  ✓ Generated crate at: {}", output_dir.join(&entry.name).display());
     }
 
+    // Second pass: generate the cross-program registry crate
+    println!("\n--- Generating registry: {} ---", mf.registry_crate);
+    registry::generate_registry_crate(&output_dir, &mf.registry_crate, &program_infos)?;
+    println!("  ✓ Generated registry at: {}", output_dir.join(&mf.registry_crate).display());
+
     println!(
-        "\n✓ All {} program(s) generated successfully.",
+        "\n✓ All {} program(s) + registry generated successfully.",
         mf.programs.len()
     );
 

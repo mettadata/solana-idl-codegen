@@ -3,3 +3,4 @@ pub mod codegen;
 pub mod idl;
 pub mod manifest;
 pub mod r#override;
+pub mod registry;
