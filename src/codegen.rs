@@ -13,6 +13,9 @@ pub struct GeneratedCode {
     pub errors: String,
     pub events: String,
     pub types: String,
+    pub serializable: String,
+    pub decoder: String,
+    pub deref_impls: String,
 }
 
 pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
@@ -159,6 +162,9 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
         events_tokens.extend(generate_event_parsing_helpers(events)?);
     }
 
+    // Generate serializable event types (Pubkey → String) with From impls
+    let serializable_code = generate_serializable(idl, module_name)?;
+
     // Format each module with appropriate imports
     let types_code = format_module(types_tokens, &[], "types")?;
     let accounts_code = format_module(accounts_tokens, &["types"], "accounts")?;
@@ -177,6 +183,9 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
         errors: errors_code,
         events: events_code,
         types: types_code,
+        serializable: serializable_code,
+        decoder: String::new(),
+        deref_impls: String::new(),
     })
 }
 
@@ -276,6 +285,7 @@ fn generate_lib_module(idl: &Idl) -> String {
 pub mod errors;
 pub mod events;
 pub mod instructions;
+pub mod serializable;
 pub mod types;
 
 // Re-export commonly used types
@@ -1114,14 +1124,6 @@ fn generate_errors(errors: &[Error]) -> Result<TokenStream> {
 }
 
 fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenStream> {
-    // Helper function to check if a type is Pubkey
-    fn is_pubkey_type(ty: &IdlType) -> bool {
-        match ty {
-            IdlType::Simple(s) => matches!(s.as_str(), "publicKey" | "pubkey" | "Pubkey"),
-            _ => false,
-        }
-    }
-
     // Helper function to generate field tokens with Pubkey serialization
     fn generate_field_tokens(fields: &[EventField]) -> Vec<TokenStream> {
         fields
@@ -1442,6 +1444,264 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
     })
 }
 
+/// Generates the `serializable.rs` module containing:
+/// - Serde-compatible event structs where Pubkey fields become String
+/// - From impls to convert from IDL event types to serializable types
+/// - A `DecodedProgramEvent` enum using serializable types
+/// - From<ParsedEvent> for DecodedProgramEvent impl
+fn generate_serializable(idl: &Idl, module_name: &str) -> Result<String> {
+    let events = match &idl.events {
+        Some(events) if !events.is_empty() => events,
+        _ => return Ok("// No events defined - no serializable types needed\n".to_string()),
+    };
+
+    let mut tokens = TokenStream::new();
+
+    // Collect events that have discriminators and fields
+    let mut serializable_events: Vec<(&Event, Vec<SerializableField>)> = Vec::new();
+
+    for event in events {
+        if event.discriminator.is_none() {
+            continue;
+        }
+
+        let fields = resolve_event_fields(event, &idl.types);
+        if fields.is_empty() {
+            continue;
+        }
+
+        serializable_events.push((event, fields));
+    }
+
+    if serializable_events.is_empty() {
+        return Ok("// No events with discriminators - no serializable types needed\n".to_string());
+    }
+
+    // Generate serializable struct + From impl for each event
+    for (event, fields) in &serializable_events {
+        let original_name = format_ident!("{}", event.name);
+        let serializable_name = format_ident!("{}Serializable", event.name);
+
+        // Generate struct fields
+        let struct_fields: Vec<TokenStream> = fields
+            .iter()
+            .map(|f| {
+                let field_name = format_ident!("{}", f.name);
+                let field_type = &f.serializable_type;
+                quote! { pub #field_name: #field_type }
+            })
+            .collect();
+
+        // Generate From impl field conversions
+        let from_fields: Vec<TokenStream> = fields
+            .iter()
+            .map(|f| {
+                let field_name = format_ident!("{}", f.name);
+                let conversion = &f.conversion;
+                quote! { #field_name: #conversion }
+            })
+            .collect();
+
+        let doc = format!("Serializable version of `{}` with String pubkeys for JSON transport.", event.name);
+
+        tokens.extend(quote! {
+            #[doc = #doc]
+            #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+            pub struct #serializable_name {
+                #(#struct_fields),*
+            }
+
+            impl From<crate::events::#original_name> for #serializable_name {
+                fn from(e: crate::events::#original_name) -> Self {
+                    Self {
+                        #(#from_fields),*
+                    }
+                }
+            }
+        });
+    }
+
+    // Generate DecodedProgramEvent enum
+    let module_pascal = module_name.to_pascal_case();
+    let _module_doc = format!("Decoded event enum for the {} program with serializable types.", module_pascal);
+
+    let enum_variants: Vec<TokenStream> = serializable_events
+        .iter()
+        .map(|(event, _)| {
+            let variant_name = format_ident!("{}", event.name.to_pascal_case());
+            let serializable_name = format_ident!("{}Serializable", event.name);
+            quote! { #variant_name(#serializable_name) }
+        })
+        .collect();
+
+    tokens.extend(quote! {
+        /// Decoded event from this program, using serializable types (String pubkeys).
+        ///
+        /// Generated automatically from the IDL. Use this for JSON serialization
+        /// and cross-service communication.
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "event", content = "data")]
+        pub enum DecodedProgramEvent {
+            #(#enum_variants),*
+        }
+    });
+
+    // Generate From<ParsedEvent> for DecodedProgramEvent
+    let from_parsed_arms: Vec<TokenStream> = serializable_events
+        .iter()
+        .map(|(event, _)| {
+            let variant_name = format_ident!("{}", event.name.to_pascal_case());
+            let parsed_variant = format_ident!("{}", event.name.to_pascal_case());
+            quote! {
+                crate::events::ParsedEvent::#parsed_variant(wrapper) => {
+                    DecodedProgramEvent::#variant_name(wrapper.0.into())
+                }
+            }
+        })
+        .collect();
+
+    tokens.extend(quote! {
+        impl From<crate::events::ParsedEvent> for DecodedProgramEvent {
+            fn from(e: crate::events::ParsedEvent) -> Self {
+                match e {
+                    #(#from_parsed_arms),*
+                }
+            }
+        }
+    });
+
+    // Generate module_name() helper
+    let module_name_str = module_name.to_string();
+    tokens.extend(quote! {
+        /// Returns the module name for this program's events.
+        pub fn module_name() -> &'static str {
+            #module_name_str
+        }
+    });
+
+    // Format the module
+    let code = quote! {
+        //! Serializable event types for cross-service communication.
+        //!
+        //! This module provides event types with `String` fields (instead of `Pubkey`)
+        //! for JSON serialization, along with `From` conversions from the IDL types.
+        //!
+        //! **Auto-generated. DO NOT EDIT.**
+
+        #tokens
+    };
+
+    let code_str = code.to_string();
+    let syntax_tree: syn::File = parse_str(&code_str).map_err(|e| {
+        if let Err(write_err) = std::fs::write("/tmp/failed_serializable_codegen.rs", &code_str) {
+            eprintln!("Failed to write debug file: {}", write_err);
+        } else {
+            eprintln!("Unparsed serializable code written to /tmp/failed_serializable_codegen.rs");
+        }
+        anyhow::anyhow!("Failed to parse generated serializable code: {}", e)
+    })?;
+    Ok(prettyplease::unparse(&syntax_tree))
+}
+
+/// Helper struct for tracking serializable field info
+struct SerializableField {
+    name: String,
+    /// The type to use in the serializable struct (String for Pubkey, same for others)
+    serializable_type: TokenStream,
+    /// The conversion expression from the original field (e.g., `e.field.to_string()` for Pubkey)
+    conversion: TokenStream,
+}
+
+/// Checks if an IDL type is a Pubkey type
+fn is_pubkey_type(ty: &IdlType) -> bool {
+    match ty {
+        IdlType::Simple(s) => matches!(s.as_str(), "publicKey" | "pubkey" | "Pubkey"),
+        _ => false,
+    }
+}
+
+/// Maps an IDL type to its serializable equivalent (Pubkey → String, others unchanged)
+fn map_serializable_type(ty: &IdlType) -> TokenStream {
+    if is_pubkey_type(ty) {
+        quote! { String }
+    } else {
+        match ty {
+            IdlType::Vec { vec } if is_pubkey_type(vec) => quote! { Vec<String> },
+            IdlType::Option { option } if is_pubkey_type(option) => quote! { Option<String> },
+            IdlType::Array { array: ArrayType::Tuple((inner, size)) } if is_pubkey_type(inner) => {
+                quote! { Vec<String> }
+            }
+            _ => map_idl_type(ty),
+        }
+    }
+}
+
+/// Generates the conversion expression for a field from IDL type to serializable type
+fn serializable_conversion(field_name: &str, ty: &IdlType) -> TokenStream {
+    let ident = format_ident!("{}", field_name);
+    if is_pubkey_type(ty) {
+        quote! { e.#ident.to_string() }
+    } else {
+        match ty {
+            IdlType::Vec { vec } if is_pubkey_type(vec) => {
+                quote! { e.#ident.iter().map(|p| p.to_string()).collect() }
+            }
+            IdlType::Option { option } if is_pubkey_type(option) => {
+                quote! { e.#ident.map(|p| p.to_string()) }
+            }
+            IdlType::Array { array: ArrayType::Tuple((inner, _)) } if is_pubkey_type(inner) => {
+                quote! { e.#ident.iter().map(|p| p.to_string()).collect::<Vec<_>>().try_into().unwrap() }
+            }
+            _ => {
+                quote! { e.#ident }
+            }
+        }
+    }
+}
+
+/// Resolves the fields for an event, looking up type definitions if needed
+fn resolve_event_fields(event: &Event, types: &Option<Vec<TypeDef>>) -> Vec<SerializableField> {
+    if let Some(fields) = &event.fields {
+        // Old format: fields are directly in the event
+        fields
+            .iter()
+            .map(|f| {
+                let name = f.name.to_snake_case();
+                SerializableField {
+                    serializable_type: map_serializable_type(&f.ty),
+                    conversion: serializable_conversion(&name, &f.ty),
+                    name,
+                }
+            })
+            .collect()
+    } else if let Some(types) = types {
+        // New format: look for the type definition
+        if let Some(type_def) = types.iter().find(|t| t.name == event.name) {
+            match &type_def.ty {
+                TypeDefType::Struct { fields } => match fields {
+                    StructFields::Named(named_fields) => named_fields
+                        .iter()
+                        .map(|f| {
+                            let name = f.name.to_snake_case();
+                            SerializableField {
+                                serializable_type: map_serializable_type(&f.ty),
+                                conversion: serializable_conversion(&name, &f.ty),
+                                name,
+                            }
+                        })
+                        .collect(),
+                    StructFields::Tuple(_) => vec![],
+                },
+                TypeDefType::Enum { .. } => vec![],
+            }
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    }
+}
+
 fn map_idl_type(ty: &IdlType) -> TokenStream {
     match ty {
         IdlType::Simple(s) => match s.as_str() {
@@ -1497,6 +1757,73 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
         quote! { #(#docs)* }
     } else {
         TokenStream::new()
+    }
+}
+
+/// Generate the `DecodeError` type for per-program decoders.
+///
+/// This error type is used by `decode_event()` in each program's `decoder.rs`.
+/// It wraps the existing `EventParseError` and adds decoder-specific variants.
+pub fn generate_decode_error() -> TokenStream {
+    quote! {
+        /// Error type for the per-program event decoder.
+        #[derive(Debug, thiserror::Error)]
+        pub enum DecodeError {
+            /// The input data was too short to contain a discriminator.
+            #[error("Data too short: expected at least 8 bytes, got {0}")]
+            DataTooShort(usize),
+
+            /// The discriminator did not match any known event.
+            #[error("Unknown discriminator: {0:?}")]
+            UnknownDiscriminator([u8; 8]),
+
+            /// Borsh deserialization failed for a matched event.
+            #[error("Deserialization failed for event '{event}': {source}")]
+            DeserializationFailed {
+                event: &'static str,
+                source: std::io::Error,
+            },
+        }
+    }
+}
+
+/// Generate the `LoggableEvent` trait definition.
+///
+/// This trait is implemented by all generated serializable event types
+/// and provides structured logging with worker/slot/block_height context.
+pub fn generate_loggable_event_trait() -> TokenStream {
+    quote! {
+        /// Trait for events that can be logged with pipeline context.
+        pub trait LoggableEvent {
+            /// Log this event with worker, slot, and block height context.
+            fn log(&self, worker: usize, slot: u64, block_height: u64);
+
+            /// Return the static name of this event type.
+            fn event_name(&self) -> &'static str;
+        }
+    }
+}
+
+/// Generate the `DecoderTrait` definition.
+///
+/// This trait is implemented by each per-program decoder module and
+/// enables polymorphic dispatch from the registry.
+pub fn generate_decoder_trait() -> TokenStream {
+    quote! {
+        /// Trait for per-program event decoders.
+        ///
+        /// Each generated program module implements this trait, enabling
+        /// the registry to dispatch by program_id without knowing concrete types.
+        pub trait DecoderTrait {
+            /// The program's on-chain address as a string constant.
+            fn program_id(&self) -> &'static str;
+
+            /// Attempt to decode raw event data into program-specific events.
+            ///
+            /// Returns a list of decoded events (multiple events may be packed
+            /// in a single data blob for some programs).
+            fn decode(&self, data: &[u8]) -> Result<Vec<super::EventData>, DecodeError>;
+        }
     }
 }
 

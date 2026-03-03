@@ -4,35 +4,47 @@ use heck::{ToPascalCase, ToSnakeCase};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solana_idl_codegen::{codegen, idl, r#override};
+use solana_idl_codegen::{codegen, idl, manifest, r#override};
 
 #[derive(Parser)]
 #[command(name = "solana-idl-codegen")]
 #[command(about = "Generate Rust code bindings from Solana IDL files", long_about = None)]
 struct Cli {
-    /// Path to the IDL JSON file
-    #[arg(short, long, value_name = "FILE")]
-    input: PathBuf,
+    /// Path to the IDL JSON file (single-program mode)
+    #[arg(short, long, value_name = "FILE", required_unless_present = "manifest")]
+    input: Option<PathBuf>,
 
-    /// Output directory for generated code
+    /// Output directory for generated code (single-program mode)
     #[arg(short, long, value_name = "DIR", default_value = "generated")]
     output: PathBuf,
 
-    /// Module name for generated code
+    /// Module name for generated code (single-program mode)
     #[arg(short, long, default_value = "program")]
     module: String,
 
-    /// Path to override file (optional)
+    /// Path to override file (optional, single-program mode)
     #[arg(long, value_name = "FILE")]
     override_file: Option<PathBuf>,
+
+    /// Path to manifest file for batch mode (processes all programs)
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["input", "override_file"])]
+    manifest: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Dispatch: manifest batch mode vs single-program mode
+    if let Some(manifest_path) = &cli.manifest {
+        return run_manifest_mode(manifest_path);
+    }
+
+    // Single-program mode — input is required (enforced by clap)
+    let input = cli.input.as_ref().expect("input required in single-program mode");
+
     // Read and parse IDL file
-    let idl_content = fs::read_to_string(&cli.input)
-        .context(format!("Failed to read IDL file: {:?}", cli.input))?;
+    let idl_content = fs::read_to_string(input)
+        .context(format!("Failed to read IDL file: {:?}", input))?;
 
     let mut idl: idl::Idl =
         serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
@@ -40,7 +52,7 @@ fn main() -> Result<()> {
     // T027: Discover and apply override file if present
     // Use module name for override discovery (more reliable than IDL filename)
     let override_discovery =
-        r#override::discover_override_file(&cli.input, &cli.module, cli.override_file.as_deref())
+        r#override::discover_override_file(input, &cli.module, cli.override_file.as_deref())
             .context("Failed to discover override file")?;
 
     match override_discovery {
@@ -198,6 +210,34 @@ fn main() -> Result<()> {
             .context(format!("Failed to write events.rs: {:?}", events_file))?;
     }
 
+    // Write serializable.rs (serializable event types with String pubkeys)
+    if !generated_code.serializable.is_empty() {
+        let serializable_file = src_dir.join("serializable.rs");
+        fs::write(&serializable_file, &generated_code.serializable).context(format!(
+            "Failed to write serializable.rs: {:?}",
+            serializable_file
+        ))?;
+    } else {
+        let serializable_file = src_dir.join("serializable.rs");
+        fs::write(
+            &serializable_file,
+            "// No serializable event types needed\n",
+        )
+        .context(format!(
+            "Failed to write serializable.rs: {:?}",
+            serializable_file
+        ))?;
+    }
+
+    // Write decoder.rs (discriminator-based event decoder)
+    if !generated_code.decoder.is_empty() {
+        let decoder_file = src_dir.join("decoder.rs");
+        fs::write(&decoder_file, &generated_code.decoder)
+            .context(format!("Failed to write decoder.rs: {:?}", decoder_file))?;
+    }
+
+    // Write deref_impls (appended to events.rs or as separate module — for now included in decoder.rs)
+
     // Generate Cargo.toml
     let cargo_toml = generate_cargo_toml(&cli.module, &idl);
     let cargo_toml_file = crate_dir.join("Cargo.toml");
@@ -241,6 +281,12 @@ fn main() -> Result<()> {
     if !generated_code.events.is_empty() {
         rustfmt_files.push(src_dir.join("events.rs"));
     }
+    if !generated_code.serializable.is_empty() {
+        rustfmt_files.push(src_dir.join("serializable.rs"));
+    }
+    if !generated_code.decoder.is_empty() {
+        rustfmt_files.push(src_dir.join("decoder.rs"));
+    }
 
     let rustfmt_args: Vec<&str> = rustfmt_files.iter().filter_map(|p| p.to_str()).collect();
 
@@ -274,7 +320,212 @@ fn main() -> Result<()> {
     println!("      ├── accounts.rs");
     println!("      ├── instructions.rs");
     println!("      ├── errors.rs");
-    println!("      └── events.rs");
+    println!("      ├── events.rs");
+    println!("      └── serializable.rs");
+
+    Ok(())
+}
+
+/// Run codegen in batch mode using a manifest file.
+///
+/// Processes all programs listed in the manifest:
+/// 1. Load and validate the manifest
+/// 2. For each program: load IDL, apply overrides, generate code, write output
+fn run_manifest_mode(manifest_path: &Path) -> Result<()> {
+    let manifest_dir = manifest_path
+        .parent()
+        .context("Manifest path has no parent directory")?;
+
+    // Load and validate manifest
+    let mf = manifest::load_manifest(manifest_path)?;
+    manifest::validate_manifest(&mf, manifest_dir)?;
+
+    println!(
+        "Processing {} program(s) from manifest: {}",
+        mf.programs.len(),
+        manifest_path.display()
+    );
+
+    let output_dir = manifest_dir.join(&mf.output_dir);
+
+    for entry in &mf.programs {
+        println!("\n--- Generating: {} ---", entry.name);
+
+        // Resolve paths
+        let idl_path = manifest::resolve_idl_path(entry, manifest_dir);
+        let override_path = manifest::resolve_override_path(entry, manifest_dir);
+
+        // Read and parse IDL
+        let idl_content = fs::read_to_string(&idl_path)
+            .with_context(|| format!("Failed to read IDL file: {}", idl_path.display()))?;
+        let mut idl: idl::Idl =
+            serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
+
+        // Apply overrides if present
+        if let Some(override_path) = &override_path {
+            let override_file = r#override::load_override_file(override_path)
+                .context("Failed to load override file")?;
+            r#override::validate_override_file(&override_file, &idl)
+                .context("Override file validation failed")?;
+            let (modified_idl, applied) = r#override::apply_overrides(idl, &override_file)
+                .context("Failed to apply overrides")?;
+            idl = modified_idl;
+            if !applied.is_empty() {
+                println!("  Applied {} override(s)", applied.len());
+            }
+        }
+
+        println!(
+            "  Program: {} | Version: {} | Instructions: {}",
+            idl.get_name(),
+            idl.get_version(),
+            idl.instructions.len()
+        );
+
+        // Generate code
+        let generated_code = codegen::generate(&idl, &entry.name)?;
+
+        // Write generated crate
+        write_generated_crate(&output_dir, &entry.name, &idl, &generated_code)?;
+
+        println!("  ✓ Generated crate at: {}", output_dir.join(&entry.name).display());
+    }
+
+    println!(
+        "\n✓ All {} program(s) generated successfully.",
+        mf.programs.len()
+    );
+
+    Ok(())
+}
+
+/// Write a generated crate's files to the output directory.
+fn write_generated_crate(
+    output_dir: &Path,
+    module_name: &str,
+    idl: &idl::Idl,
+    generated_code: &codegen::GeneratedCode,
+) -> Result<()> {
+    let crate_dir = output_dir.join(module_name);
+    let src_dir = crate_dir.join("src");
+    fs::create_dir_all(&src_dir).context(format!(
+        "Failed to create crate source directory: {:?}",
+        src_dir
+    ))?;
+
+    // Write lib.rs
+    fs::write(src_dir.join("lib.rs"), &generated_code.lib)
+        .context("Failed to write lib.rs")?;
+
+    // Write types.rs
+    let types_content = if generated_code.types.is_empty() {
+        "// No custom types defined\n"
+    } else {
+        &generated_code.types
+    };
+    fs::write(src_dir.join("types.rs"), types_content).context("Failed to write types.rs")?;
+
+    // Write accounts.rs
+    let accounts_content = if generated_code.accounts.is_empty() {
+        "// No accounts defined\n"
+    } else {
+        &generated_code.accounts
+    };
+    fs::write(src_dir.join("accounts.rs"), accounts_content)
+        .context("Failed to write accounts.rs")?;
+
+    // Write instructions.rs
+    fs::write(src_dir.join("instructions.rs"), &generated_code.instructions)
+        .context("Failed to write instructions.rs")?;
+
+    // Write errors.rs
+    let errors_content = if generated_code.errors.is_empty() {
+        "// No errors defined\n"
+    } else {
+        &generated_code.errors
+    };
+    fs::write(src_dir.join("errors.rs"), errors_content).context("Failed to write errors.rs")?;
+
+    // Write events.rs
+    let events_content = if generated_code.events.is_empty() {
+        "// No events defined\n"
+    } else {
+        &generated_code.events
+    };
+    fs::write(src_dir.join("events.rs"), events_content).context("Failed to write events.rs")?;
+
+    // Write serializable.rs
+    let serializable_content = if generated_code.serializable.is_empty() {
+        "// No serializable event types needed\n"
+    } else {
+        &generated_code.serializable
+    };
+    fs::write(src_dir.join("serializable.rs"), serializable_content)
+        .context("Failed to write serializable.rs")?;
+
+    // Write decoder.rs (discriminator-based event decoder)
+    if !generated_code.decoder.is_empty() {
+        fs::write(src_dir.join("decoder.rs"), &generated_code.decoder)
+            .context("Failed to write decoder.rs")?;
+    }
+
+    // Generate Cargo.toml
+    let cargo_toml = generate_cargo_toml(module_name, idl);
+    fs::write(crate_dir.join("Cargo.toml"), cargo_toml).context("Failed to write Cargo.toml")?;
+
+    // Generate README.md
+    let readme = generate_readme(module_name, idl);
+    fs::write(crate_dir.join("README.md"), readme).context("Failed to write README.md")?;
+
+    // Generate .gitignore
+    fs::write(crate_dir.join(".gitignore"), "/target\n/Cargo.lock\n")
+        .context("Failed to write .gitignore")?;
+
+    // Generate examples
+    let examples_dir = crate_dir.join("examples");
+    fs::create_dir_all(&examples_dir).context("Failed to create examples directory")?;
+    generate_examples(&examples_dir, module_name, idl)?;
+
+    // Format generated code with rustfmt
+    let mut rustfmt_files = vec![
+        src_dir.join("lib.rs"),
+        src_dir.join("instructions.rs"),
+    ];
+    if !generated_code.types.is_empty() {
+        rustfmt_files.push(src_dir.join("types.rs"));
+    }
+    if !generated_code.accounts.is_empty() {
+        rustfmt_files.push(src_dir.join("accounts.rs"));
+    }
+    if !generated_code.errors.is_empty() {
+        rustfmt_files.push(src_dir.join("errors.rs"));
+    }
+    if !generated_code.events.is_empty() {
+        rustfmt_files.push(src_dir.join("events.rs"));
+    }
+    if !generated_code.serializable.is_empty() {
+        rustfmt_files.push(src_dir.join("serializable.rs"));
+    }
+    if !generated_code.decoder.is_empty() {
+        rustfmt_files.push(src_dir.join("decoder.rs"));
+    }
+
+    let rustfmt_args: Vec<&str> = rustfmt_files.iter().filter_map(|p| p.to_str()).collect();
+    if !rustfmt_args.is_empty() {
+        let rustfmt_result = std::process::Command::new("rustfmt")
+            .arg("--edition")
+            .arg("2021")
+            .args(&rustfmt_args)
+            .output();
+
+        if let Err(e) = rustfmt_result {
+            eprintln!("Warning: Failed to run rustfmt: {}. Generated code may not be formatted correctly.", e);
+        } else if let Ok(output) = rustfmt_result {
+            if !output.status.success() {
+                eprintln!("Warning: rustfmt exited with non-zero status. Generated code may not be formatted correctly.");
+            }
+        }
+    }
 
     Ok(())
 }
