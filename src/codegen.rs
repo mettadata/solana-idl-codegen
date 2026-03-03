@@ -165,6 +165,12 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
     // Generate serializable event types (Pubkey → String) with From impls
     let serializable_code = generate_serializable(idl, module_name)?;
 
+    // Generate per-program decoder (discriminator-based event matching)
+    let decoder_code = generate_decoder(idl, module_name)?;
+
+    // Generate Deref impls for wrapper types
+    let deref_impls_code = generate_deref_impls(idl)?;
+
     // Format each module with appropriate imports
     let types_code = format_module(types_tokens, &[], "types")?;
     let accounts_code = format_module(accounts_tokens, &["types"], "accounts")?;
@@ -184,8 +190,8 @@ pub fn generate(idl: &Idl, module_name: &str) -> Result<GeneratedCode> {
         events: events_code,
         types: types_code,
         serializable: serializable_code,
-        decoder: String::new(),
-        deref_impls: String::new(),
+        decoder: decoder_code,
+        deref_impls: deref_impls_code,
     })
 }
 
@@ -268,7 +274,10 @@ fn format_module(tokens: TokenStream, imports: &[&str], module_type: &str) -> Re
 
 fn generate_lib_module(idl: &Idl) -> String {
     let program_id_declaration = if let Some(address) = idl.get_address() {
-        format!("solana_program::declare_id!(\"{}\");\n\n", address)
+        format!(
+            "solana_program::declare_id!(\"{addr}\");\n\n/// Program address as a string constant for registry dispatch.\npub const ID_STR: &str = \"{addr}\";\n\n",
+            addr = address
+        )
     } else {
         // If no address is provided, use a placeholder comment
         "// Program ID not specified in IDL\n// solana_program::declare_id!(\"YourProgramIdHere\");\n\n".to_string()
@@ -278,11 +287,18 @@ fn generate_lib_module(idl: &Idl) -> String {
     // since events are often also defined in types. Users can access events
     // via the events module directly (e.g., crate::events::EventName)
 
+    // Determine if decoder module should be declared
+    let decoder_mod = if idl.events.as_ref().map(|e| e.iter().any(|ev| ev.discriminator.is_some())).unwrap_or(false) {
+        "pub mod decoder;\n"
+    } else {
+        ""
+    };
+
     format!(
         r#"//! Generated Solana program bindings
 
 {}pub mod accounts;
-pub mod errors;
+{decoder_mod}pub mod errors;
 pub mod events;
 pub mod instructions;
 pub mod serializable;
@@ -1579,6 +1595,17 @@ fn generate_serializable(idl: &Idl, module_name: &str) -> Result<String> {
         }
     });
 
+    // Generate program_id() helper (FR-002)
+    if let Some(address) = idl.get_address() {
+        let address_str = address.to_string();
+        tokens.extend(quote! {
+            /// Returns the on-chain program address for this program.
+            pub fn program_id() -> &'static str {
+                #address_str
+            }
+        });
+    }
+
     // Format the module
     let code = quote! {
         //! Serializable event types for cross-service communication.
@@ -1758,6 +1785,144 @@ fn generate_docs(docs: Option<&Vec<String>>) -> TokenStream {
     } else {
         TokenStream::new()
     }
+}
+
+/// Generate the `decoder.rs` module for a program.
+///
+/// Produces a complete decoder module with:
+/// - `DecodeError` error type
+/// - `decode_event(data: &[u8]) -> Result<Vec<ParsedEvent>, DecodeError>` function
+///
+/// The decoder matches 8-byte discriminator prefixes against known events.
+pub fn generate_decoder(idl: &Idl, module_name: &str) -> Result<String> {
+    let events = match &idl.events {
+        Some(events) if !events.is_empty() => events,
+        _ => return Ok(String::new()),
+    };
+
+    // Collect events with discriminators
+    let mut match_arms = Vec::new();
+    let mut discriminator_set = std::collections::HashMap::new();
+
+    for event in events {
+        if let Some(disc) = &event.discriminator {
+            let disc_key: Vec<u8> = disc.iter().map(|&b| b as u8).collect();
+
+            // Check for duplicate discriminators (FR-006)
+            if let Some(existing) = discriminator_set.get(&disc_key) {
+                anyhow::bail!(
+                    "Duplicate discriminator detected in program '{}': events '{}' and '{}' share discriminator {:?}",
+                    module_name,
+                    existing,
+                    event.name,
+                    disc_key
+                );
+            }
+            discriminator_set.insert(disc_key, event.name.clone());
+
+            let wrapper_name = format_ident!("{}Event", event.name);
+            let variant_name = format_ident!("{}", event.name.to_pascal_case());
+            let discm_const =
+                format_ident!("{}_EVENT_DISCM", event.name.to_snake_case().to_uppercase());
+            let event_name_str = event.name.clone();
+
+            match_arms.push(quote! {
+                #discm_const => {
+                    let mut data_slice = data;
+                    match #wrapper_name::deserialize(&mut data_slice) {
+                        Ok(event) => results.push(ParsedEvent::#variant_name(event)),
+                        Err(e) => return Err(DecodeError::DeserializationFailed {
+                            event: #event_name_str,
+                            source: e,
+                        }),
+                    }
+                }
+            });
+        }
+    }
+
+    if match_arms.is_empty() {
+        return Ok(String::new());
+    }
+
+    let decode_error = generate_decode_error();
+
+    let tokens = quote! {
+        use crate::events::*;
+
+        #decode_error
+
+        /// Decode a single event from raw bytes (including 8-byte discriminator prefix).
+        ///
+        /// Returns `Ok(vec![event])` on success, or `Err(DecodeError)` on failure.
+        /// The returned Vec always contains exactly one element on success.
+        pub fn decode_event(data: &[u8]) -> Result<Vec<ParsedEvent>, DecodeError> {
+            if data.len() < 8 {
+                return Err(DecodeError::DataTooShort(data.len()));
+            }
+
+            let discm: [u8; 8] = data[..8]
+                .try_into()
+                .map_err(|_| DecodeError::DataTooShort(data.len()))?;
+
+            let mut results = Vec::with_capacity(1);
+
+            match discm {
+                #(#match_arms)*
+                _ => return Err(DecodeError::UnknownDiscriminator(discm)),
+            }
+
+            Ok(results)
+        }
+    };
+
+    let file = syn::parse2(tokens).map_err(|e| anyhow::anyhow!("Failed to parse decoder tokens: {}", e))?;
+    let formatted = prettyplease::unparse(&file);
+    Ok(formatted)
+}
+
+/// Generate `Deref` impls for all event wrapper types.
+///
+/// Each wrapper type (e.g., `TradeEventEvent`) gets a `Deref` impl
+/// targeting the inner data struct (e.g., `TradeEvent`).
+pub fn generate_deref_impls(idl: &Idl) -> Result<String> {
+    let events = match &idl.events {
+        Some(events) if !events.is_empty() => events,
+        _ => return Ok(String::new()),
+    };
+
+    let mut deref_impls = Vec::new();
+
+    for event in events {
+        if event.discriminator.is_some() {
+            let wrapper_name = format_ident!("{}Event", event.name);
+            let inner_name = format_ident!("{}", event.name);
+
+            deref_impls.push(quote! {
+                impl std::ops::Deref for #wrapper_name {
+                    type Target = #inner_name;
+
+                    fn deref(&self) -> &Self::Target {
+                        &self.0
+                    }
+                }
+            });
+        }
+    }
+
+    if deref_impls.is_empty() {
+        return Ok(String::new());
+    }
+
+    let tokens = quote! {
+        use crate::events::*;
+
+        #(#deref_impls)*
+    };
+
+    let file = syn::parse2(tokens).map_err(|e| anyhow::anyhow!("Failed to parse deref tokens: {}", e))?;
+    let formatted = prettyplease::unparse(&file);
+    Ok(formatted)
 }
 
 /// Generate the `DecodeError` type for per-program decoders.
