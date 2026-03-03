@@ -23,5 +23,10 @@
     }
   ],
   "output_dir": "../../../interfaces/solana",
-  "registry_crate": "solana_registry"
+  "registry_crate": "solana_registry",
+  "workspace_cargo_toml": "../../../Cargo.toml",
+  "downstream_cargo_tomls": [
+    "../../../core/Cargo.toml",
+    "../../../chains/solana/Cargo.toml"
+  ]
 }

@@ -74,10 +74,8 @@ pub fn generate_registry_crate(
     fs::write(src_dir.join("traits.rs"), &traits_rs).context("Failed to write traits.rs")?;
     fs::write(src_dir.join("event_data.rs"), &event_data_rs)
         .context("Failed to write event_data.rs")?;
-    fs::write(src_dir.join("registry.rs"), &registry_rs)
-        .context("Failed to write registry.rs")?;
-    fs::write(crate_dir.join("Cargo.toml"), &cargo_toml)
-        .context("Failed to write Cargo.toml")?;
+    fs::write(src_dir.join("registry.rs"), &registry_rs).context("Failed to write registry.rs")?;
+    fs::write(crate_dir.join("Cargo.toml"), &cargo_toml).context("Failed to write Cargo.toml")?;
 
     // Format all generated files
     let files: Vec<String> = ["lib.rs", "traits.rs", "event_data.rs", "registry.rs"]
@@ -138,8 +136,7 @@ fn generate_traits_rs() -> String {
         #loggable
     };
 
-    let file =
-        syn::parse2(tokens).expect("Failed to parse traits tokens");
+    let file = syn::parse2(tokens).expect("Failed to parse traits tokens");
     prettyplease::unparse(&file)
 }
 
@@ -228,8 +225,7 @@ fn generate_event_data_rs(programs: &[ProgramEventInfo]) -> String {
         }
     };
 
-    let file =
-        syn::parse2(tokens).expect("Failed to parse event_data tokens");
+    let file = syn::parse2(tokens).expect("Failed to parse event_data tokens");
     prettyplease::unparse(&file)
 }
 
@@ -313,8 +309,7 @@ fn generate_registry_rs(programs: &[ProgramEventInfo]) -> String {
         }
     };
 
-    let file =
-        syn::parse2(tokens).expect("Failed to parse registry tokens");
+    let file = syn::parse2(tokens).expect("Failed to parse registry tokens");
     prettyplease::unparse(&file)
 }
 

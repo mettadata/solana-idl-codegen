@@ -288,7 +288,12 @@ fn generate_lib_module(idl: &Idl) -> String {
     // via the events module directly (e.g., crate::events::EventName)
 
     // Determine if decoder module should be declared
-    let decoder_mod = if idl.events.as_ref().map(|e| e.iter().any(|ev| ev.discriminator.is_some())).unwrap_or(false) {
+    let decoder_mod = if idl
+        .events
+        .as_ref()
+        .map(|e| e.iter().any(|ev| ev.discriminator.is_some()))
+        .unwrap_or(false)
+    {
         "pub mod decoder;\n"
     } else {
         ""
@@ -1518,7 +1523,10 @@ fn generate_serializable(idl: &Idl, module_name: &str) -> Result<String> {
             })
             .collect();
 
-        let doc = format!("Serializable version of `{}` with String pubkeys for JSON transport.", event.name);
+        let doc = format!(
+            "Serializable version of `{}` with String pubkeys for JSON transport.",
+            event.name
+        );
 
         tokens.extend(quote! {
             #[doc = #doc]
@@ -1539,7 +1547,10 @@ fn generate_serializable(idl: &Idl, module_name: &str) -> Result<String> {
 
     // Generate DecodedProgramEvent enum
     let module_pascal = module_name.to_pascal_case();
-    let _module_doc = format!("Decoded event enum for the {} program with serializable types.", module_pascal);
+    let _module_doc = format!(
+        "Decoded event enum for the {} program with serializable types.",
+        module_pascal
+    );
 
     let enum_variants: Vec<TokenStream> = serializable_events
         .iter()
@@ -1655,7 +1666,9 @@ fn map_serializable_type(ty: &IdlType) -> TokenStream {
         match ty {
             IdlType::Vec { vec } if is_pubkey_type(vec) => quote! { Vec<String> },
             IdlType::Option { option } if is_pubkey_type(option) => quote! { Option<String> },
-            IdlType::Array { array: ArrayType::Tuple((inner, size)) } if is_pubkey_type(inner) => {
+            IdlType::Array {
+                array: ArrayType::Tuple((inner, size)),
+            } if is_pubkey_type(inner) => {
                 quote! { Vec<String> }
             }
             _ => map_idl_type(ty),
@@ -1676,7 +1689,9 @@ fn serializable_conversion(field_name: &str, ty: &IdlType) -> TokenStream {
             IdlType::Option { option } if is_pubkey_type(option) => {
                 quote! { e.#ident.map(|p| p.to_string()) }
             }
-            IdlType::Array { array: ArrayType::Tuple((inner, _)) } if is_pubkey_type(inner) => {
+            IdlType::Array {
+                array: ArrayType::Tuple((inner, _)),
+            } if is_pubkey_type(inner) => {
                 quote! { e.#ident.iter().map(|p| p.to_string()).collect() }
             }
             _ => {
@@ -1806,7 +1821,7 @@ pub fn generate_decoder(idl: &Idl, module_name: &str) -> Result<String> {
 
     for event in events {
         if let Some(disc) = &event.discriminator {
-            let disc_key: Vec<u8> = disc.iter().map(|&b| b as u8).collect();
+            let disc_key: Vec<u8> = disc.to_vec();
 
             // Check for duplicate discriminators (FR-006)
             if let Some(existing) = discriminator_set.get(&disc_key) {
@@ -1876,7 +1891,8 @@ pub fn generate_decoder(idl: &Idl, module_name: &str) -> Result<String> {
         }
     };
 
-    let file = syn::parse2(tokens).map_err(|e| anyhow::anyhow!("Failed to parse decoder tokens: {}", e))?;
+    let file = syn::parse2(tokens)
+        .map_err(|e| anyhow::anyhow!("Failed to parse decoder tokens: {}", e))?;
     let formatted = prettyplease::unparse(&file);
     Ok(formatted)
 }
@@ -1920,7 +1936,8 @@ pub fn generate_deref_impls(idl: &Idl) -> Result<String> {
         #(#deref_impls)*
     };
 
-    let file = syn::parse2(tokens).map_err(|e| anyhow::anyhow!("Failed to parse deref tokens: {}", e))?;
+    let file =
+        syn::parse2(tokens).map_err(|e| anyhow::anyhow!("Failed to parse deref tokens: {}", e))?;
     let formatted = prettyplease::unparse(&file);
     Ok(formatted)
 }

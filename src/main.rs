@@ -4,7 +4,7 @@ use heck::{ToPascalCase, ToSnakeCase};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solana_idl_codegen::{codegen, idl, manifest, r#override, registry};
+use solana_idl_codegen::{codegen, idl, manifest, r#override, registry, workspace};
 
 #[derive(Parser)]
 #[command(name = "solana-idl-codegen")]
@@ -40,11 +40,14 @@ fn main() -> Result<()> {
     }
 
     // Single-program mode — input is required (enforced by clap)
-    let input = cli.input.as_ref().expect("input required in single-program mode");
+    let input = cli
+        .input
+        .as_ref()
+        .expect("input required in single-program mode");
 
     // Read and parse IDL file
-    let idl_content = fs::read_to_string(input)
-        .context(format!("Failed to read IDL file: {:?}", input))?;
+    let idl_content =
+        fs::read_to_string(input).context(format!("Failed to read IDL file: {:?}", input))?;
 
     let mut idl: idl::Idl =
         serde_json::from_str(&idl_content).context("Failed to parse IDL JSON")?;
@@ -395,13 +398,83 @@ fn run_manifest_mode(manifest_path: &Path) -> Result<()> {
         // Write generated crate
         write_generated_crate(&output_dir, &entry.name, &idl, &generated_code)?;
 
-        println!("  ✓ Generated crate at: {}", output_dir.join(&entry.name).display());
+        println!(
+            "  ✓ Generated crate at: {}",
+            output_dir.join(&entry.name).display()
+        );
     }
 
     // Second pass: generate the cross-program registry crate
     println!("\n--- Generating registry: {} ---", mf.registry_crate);
     registry::generate_registry_crate(&output_dir, &mf.registry_crate, &program_infos)?;
-    println!("  ✓ Generated registry at: {}", output_dir.join(&mf.registry_crate).display());
+    println!(
+        "  ✓ Generated registry at: {}",
+        output_dir.join(&mf.registry_crate).display()
+    );
+
+    // Third pass: workspace auto-wiring (if configured)
+    if let Some(ref ws_toml) = mf.workspace_cargo_toml {
+        let root_cargo_toml = manifest_dir.join(ws_toml);
+        println!("\n--- Workspace wiring ---");
+
+        // Build (name, relative_path) pairs using output_dir relative to workspace root
+        let ws_root = root_cargo_toml
+            .parent()
+            .context("workspace Cargo.toml has no parent directory")?;
+        let abs_output = fs::canonicalize(&output_dir).unwrap_or_else(|_| output_dir.clone());
+
+        let programs: Vec<(String, String)> = mf
+            .programs
+            .iter()
+            .map(|entry| {
+                let crate_abs = abs_output.join(&entry.name);
+                let rel = pathdiff::diff_paths(&crate_abs, ws_root)
+                    .unwrap_or_else(|| crate_abs.clone())
+                    .to_string_lossy()
+                    .to_string();
+                (entry.name.clone(), rel)
+            })
+            .collect();
+
+        let registry_abs = abs_output.join(&mf.registry_crate);
+        let registry_rel = pathdiff::diff_paths(&registry_abs, ws_root)
+            .unwrap_or_else(|| registry_abs.clone())
+            .to_string_lossy()
+            .to_string();
+
+        // Resolve downstream Cargo.toml paths
+        let downstream: Vec<PathBuf> = mf
+            .downstream_cargo_tomls
+            .as_ref()
+            .map(|paths| paths.iter().map(|p| manifest_dir.join(p)).collect())
+            .unwrap_or_default();
+
+        let downstream_ref: Option<&Path> = downstream.first().map(|p| p.as_path());
+
+        workspace::wire_workspace(
+            &root_cargo_toml,
+            &programs,
+            &mf.registry_crate,
+            &registry_rel,
+            downstream_ref,
+        )?;
+
+        // Wire each program crate as downstream dependency too
+        for downstream_path in &downstream {
+            for entry in &mf.programs {
+                let changed = workspace::ensure_dependency(downstream_path, &entry.name)?;
+                if changed {
+                    eprintln!(
+                        "  + Added {} dependency to {}",
+                        entry.name,
+                        downstream_path.display()
+                    );
+                }
+            }
+        }
+
+        println!("  ✓ Workspace wiring complete");
+    }
 
     println!(
         "\n✓ All {} program(s) + registry generated successfully.",
@@ -426,8 +499,7 @@ fn write_generated_crate(
     ))?;
 
     // Write lib.rs
-    fs::write(src_dir.join("lib.rs"), &generated_code.lib)
-        .context("Failed to write lib.rs")?;
+    fs::write(src_dir.join("lib.rs"), &generated_code.lib).context("Failed to write lib.rs")?;
 
     // Write types.rs
     let types_content = if generated_code.types.is_empty() {
@@ -447,8 +519,11 @@ fn write_generated_crate(
         .context("Failed to write accounts.rs")?;
 
     // Write instructions.rs
-    fs::write(src_dir.join("instructions.rs"), &generated_code.instructions)
-        .context("Failed to write instructions.rs")?;
+    fs::write(
+        src_dir.join("instructions.rs"),
+        &generated_code.instructions,
+    )
+    .context("Failed to write instructions.rs")?;
 
     // Write errors.rs
     let errors_content = if generated_code.errors.is_empty() {
@@ -499,10 +574,7 @@ fn write_generated_crate(
     generate_examples(&examples_dir, module_name, idl)?;
 
     // Format generated code with rustfmt
-    let mut rustfmt_files = vec![
-        src_dir.join("lib.rs"),
-        src_dir.join("instructions.rs"),
-    ];
+    let mut rustfmt_files = vec![src_dir.join("lib.rs"), src_dir.join("instructions.rs")];
     if !generated_code.types.is_empty() {
         rustfmt_files.push(src_dir.join("types.rs"));
     }

@@ -77,13 +77,22 @@ fn test_generate_decoder_contains_discriminator_arms() {
     let idl = test_idl_with_events();
     let result = codegen::generate_decoder(&idl, "test_program").unwrap();
 
-    assert!(!result.is_empty(), "Decoder should be generated for IDL with events");
+    assert!(
+        !result.is_empty(),
+        "Decoder should be generated for IDL with events"
+    );
 
     // Should contain the DecodeError type
-    assert!(result.contains("DecodeError"), "Should contain DecodeError type");
+    assert!(
+        result.contains("DecodeError"),
+        "Should contain DecodeError type"
+    );
 
     // Should contain the decode_event function
-    assert!(result.contains("fn decode_event"), "Should contain decode_event function");
+    assert!(
+        result.contains("fn decode_event"),
+        "Should contain decode_event function"
+    );
 
     // Should reference discriminator constants
     assert!(
@@ -117,7 +126,10 @@ fn test_generate_decoder_contains_discriminator_arms() {
 fn test_generate_decoder_no_events() {
     let idl = empty_idl();
     let result = codegen::generate_decoder(&idl, "empty_program").unwrap();
-    assert!(result.is_empty(), "No decoder should be generated for IDL without events");
+    assert!(
+        result.is_empty(),
+        "No decoder should be generated for IDL without events"
+    );
 }
 
 /// T010: Unit test for generate_deref_impls() — verify Deref impl generated
@@ -141,8 +153,14 @@ fn test_generate_deref_impls() {
     );
 
     // Should reference inner types as Target
-    assert!(result.contains("TradeEvent"), "Should reference TradeEvent as Target");
-    assert!(result.contains("CreateEvent"), "Should reference CreateEvent as Target");
+    assert!(
+        result.contains("TradeEvent"),
+        "Should reference TradeEvent as Target"
+    );
+    assert!(
+        result.contains("CreateEvent"),
+        "Should reference CreateEvent as Target"
+    );
 }
 
 /// T010: Verify deref impls handles no events gracefully.
@@ -242,8 +260,14 @@ fn test_generate_populates_decoder_fields() {
     let idl = test_idl_with_events();
     let generated = codegen::generate(&idl, "test_program").unwrap();
 
-    assert!(!generated.decoder.is_empty(), "decoder field should be populated");
-    assert!(!generated.deref_impls.is_empty(), "deref_impls field should be populated");
+    assert!(
+        !generated.decoder.is_empty(),
+        "decoder field should be populated"
+    );
+    assert!(
+        !generated.deref_impls.is_empty(),
+        "deref_impls field should be populated"
+    );
 }
 
 /// Verify generated lib.rs includes decoder module declaration.

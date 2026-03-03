@@ -17,6 +17,17 @@ pub struct Manifest {
 
     /// Name of the registry crate to generate
     pub registry_crate: String,
+
+    /// Path to root Cargo.toml for workspace auto-wiring (relative to manifest file).
+    /// When set, generated crates are automatically added to workspace.members
+    /// and workspace.dependencies.
+    #[serde(default)]
+    pub workspace_cargo_toml: Option<String>,
+
+    /// Paths to downstream Cargo.toml files that should get the registry as a
+    /// workspace dependency (relative to manifest file).
+    #[serde(default)]
+    pub downstream_cargo_tomls: Option<Vec<String>>,
 }
 
 /// A single program entry in the manifest.
@@ -131,10 +142,7 @@ pub fn resolve_idl_path(entry: &ProgramEntry, manifest_dir: &Path) -> PathBuf {
 
 /// Resolve a program entry's override path to an absolute path, if present.
 pub fn resolve_override_path(entry: &ProgramEntry, manifest_dir: &Path) -> Option<PathBuf> {
-    entry
-        .override_file
-        .as_ref()
-        .map(|p| manifest_dir.join(p))
+    entry.override_file.as_ref().map(|p| manifest_dir.join(p))
 }
 
 #[cfg(test)]
@@ -177,7 +185,10 @@ mod tests {
         let result = load_manifest(&manifest).unwrap();
         assert_eq!(result.programs.len(), 2);
         assert_eq!(result.programs[0].name, "pumpfun");
-        assert_eq!(result.programs[1].override_file.as_deref(), Some("overrides/raydium.json"));
+        assert_eq!(
+            result.programs[1].override_file.as_deref(),
+            Some("overrides/raydium.json")
+        );
         assert_eq!(result.output_dir, "../../interfaces/solana");
         assert_eq!(result.registry_crate, "solana_registry");
     }
@@ -209,6 +220,8 @@ mod tests {
             }],
             output_dir: "../../interfaces/solana".to_string(),
             registry_crate: "solana_registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         assert!(validate_manifest(&manifest, dir.path()).is_ok());
@@ -221,11 +234,16 @@ mod tests {
             programs: vec![],
             output_dir: "output".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one program"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one program"));
     }
 
     #[test]
@@ -248,11 +266,16 @@ mod tests {
             ],
             output_dir: "output".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Duplicate program name"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Duplicate program name"));
     }
 
     #[test]
@@ -266,11 +289,16 @@ mod tests {
             }],
             output_dir: "output".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("IDL file not found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("IDL file not found"));
     }
 
     #[test]
@@ -286,11 +314,16 @@ mod tests {
             }],
             output_dir: "output".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Override file not found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Override file not found"));
     }
 
     #[test]
@@ -306,6 +339,8 @@ mod tests {
             }],
             output_dir: "output".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
@@ -326,6 +361,8 @@ mod tests {
             }],
             output_dir: "".to_string(),
             registry_crate: "registry".to_string(),
+            workspace_cargo_toml: None,
+            downstream_cargo_tomls: None,
         };
 
         let result = validate_manifest(&manifest, dir.path());
@@ -362,6 +399,9 @@ mod tests {
             resolve_override_path(&entry_with, Path::new("/workspace")),
             Some(PathBuf::from("/workspace/overrides/pump.json"))
         );
-        assert_eq!(resolve_override_path(&entry_without, Path::new("/workspace")), None);
+        assert_eq!(
+            resolve_override_path(&entry_without, Path::new("/workspace")),
+            None
+        );
     }
 }
