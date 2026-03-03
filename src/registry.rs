@@ -145,6 +145,8 @@ fn generate_traits_rs() -> String {
 
 fn generate_event_data_rs(programs: &[ProgramEventInfo]) -> String {
     let mut variants = Vec::new();
+    let mut event_name_arms = Vec::new();
+    let mut log_arms = Vec::new();
 
     for prog in programs {
         let prog_pascal = prog.module_name.to_pascal_case();
@@ -160,6 +162,20 @@ fn generate_event_data_rs(programs: &[ProgramEventInfo]) -> String {
 
             variants.push(quote::quote! {
                 #variant_ident(#prog_mod::serializable::#serializable_type)
+            });
+
+            let variant_name_str = &variant_name;
+            let prog_name = &prog.module_name;
+            event_name_arms.push(quote::quote! {
+                EventData::#variant_ident(_) => #variant_name_str
+            });
+            log_arms.push(quote::quote! {
+                EventData::#variant_ident(ref e) => {
+                    log::debug!(
+                        "Worker: {}, [{}] {} - Slot: {}, Block: {}, data: {:?}",
+                        worker, #prog_name, #variant_name_str, slot, block_height, e
+                    );
+                }
             });
         }
     }
@@ -179,6 +195,27 @@ fn generate_event_data_rs(programs: &[ProgramEventInfo]) -> String {
             #(#variants,)*
             /// Fallback for unrecognized events.
             Unknown(UnknownEvent),
+        }
+
+        impl crate::LoggableEvent for EventData {
+            fn event_name(&self) -> &'static str {
+                match self {
+                    #(#event_name_arms,)*
+                    EventData::Unknown(_) => "Unknown",
+                }
+            }
+
+            fn log(&self, worker: usize, slot: u64, block_height: u64) {
+                match self {
+                    #(#log_arms)*
+                    EventData::Unknown(ref e) => {
+                        log::debug!(
+                            "Worker: {}, [unknown] Unknown - Slot: {}, Block: {}, error: {:?}",
+                            worker, slot, block_height, e.parse_error
+                        );
+                    }
+                }
+            }
         }
 
         /// Represents an unrecognized event, preserving the raw data.
@@ -302,6 +339,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 serde = {{ version = "^1.0", features = ["derive"] }}
 base64 = "^0.22"
+log = "^0.4"
 
 {}
 "#,

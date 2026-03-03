@@ -1677,7 +1677,7 @@ fn serializable_conversion(field_name: &str, ty: &IdlType) -> TokenStream {
                 quote! { e.#ident.map(|p| p.to_string()) }
             }
             IdlType::Array { array: ArrayType::Tuple((inner, _)) } if is_pubkey_type(inner) => {
-                quote! { e.#ident.iter().map(|p| p.to_string()).collect::<Vec<_>>().try_into().unwrap() }
+                quote! { e.#ident.iter().map(|p| p.to_string()).collect() }
             }
             _ => {
                 quote! { e.#ident }
