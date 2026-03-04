@@ -616,7 +616,9 @@ fn write_generated_crate(
 
 fn generate_cargo_toml(module_name: &str, idl: &idl::Idl) -> String {
     format!(
-        r#"[package]
+        r#"[workspace]
+
+[package]
 name = "{}"
 version = "{}"
 edition = "2021"

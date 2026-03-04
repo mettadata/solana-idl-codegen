@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["generated"]
 
 [package]
 name = "solana-idl-codegen"

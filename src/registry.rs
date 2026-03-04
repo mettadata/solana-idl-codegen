@@ -324,7 +324,9 @@ fn generate_cargo_toml(registry_name: &str, programs: &[ProgramEventInfo]) -> St
     }
 
     format!(
-        r#"[package]
+        r#"[workspace]
+
+[package]
 name = "{}"
 version = "0.1.0"
 edition = "2021"

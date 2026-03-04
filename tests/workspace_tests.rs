@@ -146,9 +146,7 @@ core = { path = "./core" }
         .split("[workspace.dependencies]")
         .next()
         .unwrap_or(&content);
-    let count = members_section
-        .matches("interfaces/solana/pumpfun")
-        .count();
+    let count = members_section.matches("interfaces/solana/pumpfun").count();
     assert_eq!(
         count, 1,
         "Should appear exactly once in members, not duplicated"

@@ -115,8 +115,9 @@ fn test_event_data_enum_completeness() {
     let dir = tempfile::TempDir::new().unwrap();
     generate_registry_crate(dir.path(), "test_registry", &[prog_a, prog_b]).unwrap();
 
-    let event_data_src = std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
-        .expect("event_data.rs should exist");
+    let event_data_src =
+        std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
+            .expect("event_data.rs should exist");
 
     // All program-prefixed variants should exist
     assert!(
@@ -157,8 +158,9 @@ fn test_loggable_event_trait_impls() {
     let dir = tempfile::TempDir::new().unwrap();
     generate_registry_crate(dir.path(), "test_registry", &[prog]).unwrap();
 
-    let event_data_src = std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
-        .expect("event_data.rs should exist");
+    let event_data_src =
+        std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
+            .expect("event_data.rs should exist");
 
     // LoggableEvent impl should exist
     assert!(
@@ -236,15 +238,19 @@ fn test_zero_events_idl_registry() {
 
     let info = collect_program_event_info(&entry("empty_prog"), &idl);
 
-    assert!(!info.has_decoder, "Program with no events should have has_decoder=false");
+    assert!(
+        !info.has_decoder,
+        "Program with no events should have has_decoder=false"
+    );
     assert!(info.event_names.is_empty(), "Event names should be empty");
 
     // Registry should still generate without errors
     let dir = tempfile::TempDir::new().unwrap();
     generate_registry_crate(dir.path(), "test_registry", &[info]).unwrap();
 
-    let event_data_src = std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
-        .expect("event_data.rs should exist");
+    let event_data_src =
+        std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
+            .expect("event_data.rs should exist");
 
     // Should still have Unknown variant
     assert!(event_data_src.contains("Unknown(UnknownEvent)"));
@@ -272,7 +278,10 @@ fn test_events_without_discriminators() {
 
     let info = collect_program_event_info(&entry("nodisc"), &idl);
 
-    assert!(!info.has_decoder, "Events without discriminators should not have decoder");
+    assert!(
+        !info.has_decoder,
+        "Events without discriminators should not have decoder"
+    );
     assert!(info.event_names.is_empty());
 }
 
@@ -300,8 +309,9 @@ fn test_same_named_events_no_collision() {
     let dir = tempfile::TempDir::new().unwrap();
     generate_registry_crate(dir.path(), "test_registry", &[prog_a, prog_b]).unwrap();
 
-    let event_data_src = std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
-        .expect("event_data.rs should exist");
+    let event_data_src =
+        std::fs::read_to_string(dir.path().join("test_registry/src/event_data.rs"))
+            .expect("event_data.rs should exist");
 
     // Both variants should exist with program prefixes (no collision)
     assert!(
