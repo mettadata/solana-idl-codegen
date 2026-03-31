@@ -641,7 +641,7 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
                         /// - The account data is long enough to contain the discriminator
                         ///
                         /// # Example
-                        /// ```no_run
+                        /// ```ignore
                         /// use solana_program::account_info::AccountInfo;
                         /// use crate::accounts::*;
                         ///
@@ -689,7 +689,7 @@ fn generate_account_validation_helpers(idl: &Idl) -> Result<TokenStream> {
                         /// This is a convenience method that combines validation and deserialization.
                         ///
                         /// # Example
-                        /// ```no_run
+                        /// ```ignore
                         /// use solana_program::account_info::AccountInfo;
                         /// use crate::accounts::*;
                         ///
@@ -1249,7 +1249,7 @@ fn generate_event(event: &Event, types: &Option<Vec<TypeDef>>) -> Result<TokenSt
     }
 
     // Generate data struct with enhanced documentation
-    let enhanced_docs = format!("Event: {}\n///\n/// # Usage\n/// ```no_run\n/// use crate::events::*;\n///\n/// // Parse event from transaction data\n/// let event = parse_event(&event_data)?;\n/// match event {{\n///     ParsedEvent::{}(e) => println!(\"Event: {{:?}}\", e),\n///     _ => {{}}\n/// }}\n/// ```", event.name, event.name.to_pascal_case());
+    let enhanced_docs = format!("Event: {}\n///\n/// # Usage\n/// ```ignore\n/// use crate::events::*;\n///\n/// // Parse event from transaction data\n/// let event = parse_event(&event_data)?;\n/// match event {{\n///     ParsedEvent::{}(e) => println!(\"Event: {{:?}}\", e),\n///     _ => {{}}\n/// }}\n/// ```", event.name, event.name.to_pascal_case());
 
     tokens.extend(quote! {
         #[doc = #enhanced_docs]
@@ -1370,7 +1370,7 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
         /// Parse an event from raw bytes (including discriminator)
         ///
         /// # Example
-        /// ```no_run
+        /// ```ignore
         /// use crate::events::*;
         ///
         /// let event_data: &[u8] = /* event data from transaction log */;
@@ -1429,7 +1429,7 @@ fn generate_event_parsing_helpers(events: &[Event]) -> Result<TokenStream> {
         /// hardcoded size estimates.
         ///
         /// # Example
-        /// ```no_run
+        /// ```ignore
         /// use crate::events::*;
         ///
         /// // From transaction logs, extract and decode program data
