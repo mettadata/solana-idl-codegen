@@ -314,9 +314,9 @@ fn main() -> Result<()> {
     println!("  ├── README.md");
     println!("  ├── .gitignore");
     println!("  ├── examples/");
-    println!("  │   ├── build_instruction.rs");
-    println!("  │   ├── parse_account.rs");
-    println!("  │   └── parse_events.rs");
+    println!("  │   ├── {}_build_instruction.rs", cli.module);
+    println!("  │   ├── {}_parse_account.rs", cli.module);
+    println!("  │   └── {}_parse_events.rs", cli.module);
     println!("  └── src/");
     println!("      ├── lib.rs");
     println!("      ├── types.rs");
@@ -788,9 +788,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string()
     };
 
-    let build_ix_file = examples_dir.join("build_instruction.rs");
+    let build_ix_file = examples_dir.join(format!("{module_name}_build_instruction.rs"));
     fs::write(&build_ix_file, build_instruction_example).context(format!(
-        "Failed to write build_instruction.rs: {:?}",
+        "Failed to write {module_name}_build_instruction.rs: {:?}",
         build_ix_file
     ))?;
 
@@ -845,9 +845,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string()
     };
 
-    let parse_account_file = examples_dir.join("parse_account.rs");
+    let parse_account_file = examples_dir.join(format!("{module_name}_parse_account.rs"));
     fs::write(&parse_account_file, parse_account_example).context(format!(
-        "Failed to write parse_account.rs: {:?}",
+        "Failed to write {module_name}_parse_account.rs: {:?}",
         parse_account_file
     ))?;
 
@@ -911,9 +911,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string()
     };
 
-    let parse_events_file = examples_dir.join("parse_events.rs");
+    let parse_events_file = examples_dir.join(format!("{module_name}_parse_events.rs"));
     fs::write(&parse_events_file, parse_events_example).context(format!(
-        "Failed to write parse_events.rs: {:?}",
+        "Failed to write {module_name}_parse_events.rs: {:?}",
         parse_events_file
     ))?;
 

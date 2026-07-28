@@ -740,24 +740,24 @@ fn test_example_files_generated() {
         tested += 1;
 
         let examples_dir = format!("{}/examples", crate_path);
-        let build_ix_example = format!("{}/build_instruction.rs", examples_dir);
-        let parse_account_example = format!("{}/parse_account.rs", examples_dir);
-        let parse_events_example = format!("{}/parse_events.rs", examples_dir);
+        let build_ix_example = format!("{}/{}_build_instruction.rs", examples_dir, crate_name);
+        let parse_account_example = format!("{}/{}_parse_account.rs", examples_dir, crate_name);
+        let parse_events_example = format!("{}/{}_parse_events.rs", examples_dir, crate_name);
 
         let mut all_present = true;
         let mut missing = Vec::new();
 
         if !Path::new(&build_ix_example).exists() {
             all_present = false;
-            missing.push("build_instruction.rs");
+            missing.push(format!("{}_build_instruction.rs", crate_name));
         }
         if !Path::new(&parse_account_example).exists() {
             all_present = false;
-            missing.push("parse_account.rs");
+            missing.push(format!("{}_parse_account.rs", crate_name));
         }
         if !Path::new(&parse_events_example).exists() {
             all_present = false;
-            missing.push("parse_events.rs");
+            missing.push(format!("{}_parse_events.rs", crate_name));
         }
 
         if all_present {
@@ -801,11 +801,11 @@ fn test_example_files_content() {
             continue;
         }
 
-        // Check build_instruction.rs
-        let build_ix_path = format!("{}/build_instruction.rs", examples_dir);
+        // Check <crate_name>_build_instruction.rs
+        let build_ix_path = format!("{}/{}_build_instruction.rs", examples_dir, crate_name);
         if Path::new(&build_ix_path).exists() {
-            let content =
-                fs::read_to_string(&build_ix_path).expect("Failed to read build_instruction.rs");
+            let content = fs::read_to_string(&build_ix_path)
+                .expect("Failed to read <crate_name>_build_instruction.rs");
             // Check for imports (either active or commented) or instruction building references
             // If no instructions are defined, the file will be minimal with just a main function
             let has_imports = (content.contains("use")
@@ -817,21 +817,21 @@ fn test_example_files_content() {
 
             assert!(
                 has_imports || has_instruction_refs || no_instructions_defined,
-                "{} build_instruction.rs should have imports, instruction references, or indicate no instructions",
+                "{} {0}_build_instruction.rs should have imports, instruction references, or indicate no instructions",
                 crate_name
             );
             assert!(
                 content.contains("fn main"),
-                "{} build_instruction.rs should have a main function",
+                "{} {0}_build_instruction.rs should have a main function",
                 crate_name
             );
         }
 
-        // Check parse_account.rs
-        let parse_account_path = format!("{}/parse_account.rs", examples_dir);
+        // Check <crate_name>_parse_account.rs
+        let parse_account_path = format!("{}/{}_parse_account.rs", examples_dir, crate_name);
         if Path::new(&parse_account_path).exists() {
-            let content =
-                fs::read_to_string(&parse_account_path).expect("Failed to read parse_account.rs");
+            let content = fs::read_to_string(&parse_account_path)
+                .expect("Failed to read <crate_name>_parse_account.rs");
             // Check for imports (either active or commented) or account parsing references
             // If no accounts are defined, the file will be minimal with just a main function
             let has_imports = (content.contains("use")
@@ -843,24 +843,24 @@ fn test_example_files_content() {
 
             assert!(
                 has_imports || has_account_refs || no_accounts_defined,
-                "{} parse_account.rs should have imports, account parsing references, or indicate no accounts",
+                "{} {0}_parse_account.rs should have imports, account parsing references, or indicate no accounts",
                 crate_name
             );
             // Only check for account parsing if accounts are actually defined
             if !no_accounts_defined {
                 assert!(
                     has_account_refs,
-                    "{} parse_account.rs should reference account parsing when accounts are defined",
+                    "{} {0}_parse_account.rs should reference account parsing when accounts are defined",
                     crate_name
                 );
             }
         }
 
-        // Check parse_events.rs
-        let parse_events_path = format!("{}/parse_events.rs", examples_dir);
+        // Check <crate_name>_parse_events.rs
+        let parse_events_path = format!("{}/{}_parse_events.rs", examples_dir, crate_name);
         if Path::new(&parse_events_path).exists() {
-            let content =
-                fs::read_to_string(&parse_events_path).expect("Failed to read parse_events.rs");
+            let content = fs::read_to_string(&parse_events_path)
+                .expect("Failed to read <crate_name>_parse_events.rs");
             // Check for imports (either active or commented) or event parsing references
             // If no events are defined, the file will be minimal with just a main function
             let has_events = content.contains("parse_event") || content.contains("ParsedEvent");
@@ -871,14 +871,14 @@ fn test_example_files_content() {
 
             assert!(
                 has_imports || has_events || no_events_defined,
-                "{} parse_events.rs should have imports, event parsing references, or indicate no events",
+                "{} {0}_parse_events.rs should have imports, event parsing references, or indicate no events",
                 crate_name
             );
             // Only check for event parsing if events are actually defined
             if !no_events_defined {
                 assert!(
                     has_events,
-                    "{} parse_events.rs should reference event parsing when events are defined",
+                    "{} {0}_parse_events.rs should reference event parsing when events are defined",
                     crate_name
                 );
             }
